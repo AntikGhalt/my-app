@@ -1,0 +1,320 @@
+# ISTAT/EUROSTAT Data Pipeline
+
+Automated data pipeline that fetches statistical data from ISTAT/EUROSTAT APIs and uploads processed Excel files to Google Drive.
+
+## Overview
+
+This system runs on **Google Cloud Run** and is triggered by **Cloud Scheduler**. It downloads data from statistical APIs, processes it into Excel files, and uploads them to a Google Shared Drive with smart version management.
+
+### Key Features
+
+- **Edition-based versioning**: Only uploads when data edition changes
+- **Automatic archiving**: Old files are moved to Archive folder when new edition arrives
+- **Logging**: All operations are logged to `pipeline_log.txt`
+- **Fixed filenames**: Output files have fixed names (e.g., `*_LATEST.xlsx`) for Tableau integration
+- **Modular design**: Each data source is a separate pipeline file
+
+---
+
+## Project Structure
+
+```
+istat_project/
+├── main.py                              # Flask app + shared utilities
+├── pipelines/
+│   ├── __init__.py                      # Package init
+│   ├── istat_reddito_famiglie.py        # ISTAT Reddito Disponibile pipeline
+│   └── [future_pipeline].py             # Add more pipelines here
+├── requirements.txt                     # Python dependencies
+├── Dockerfile                           # Container configuration
+├── .gcloudignore                        # Files to exclude from deploy
+└── README.md                            # This file
+```
+
+---
+
+## Configuration
+
+### Google Drive IDs (in `main.py`)
+
+```python
+DRIVE_FOLDER_ID = "0ACZ58HkBSJpjUk9PVA"           # Main folder (DATABASE3)
+ARCHIVE_FOLDER_ID = "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu"  # Archive subfolder
+```
+
+### Pipeline Configuration (in each pipeline file)
+
+Each pipeline has its own configuration section:
+
+```python
+OUTPUT_FILENAME = "Reddito_disponibile_famiglie_LATEST.xlsx"
+SECTOR = 'S14A'
+AGGREGATES = { ... }  # Which data series to download
+```
+
+---
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Health check |
+| `/test` | GET | Test Google Drive connection |
+| `/run` | GET/POST | Run default pipeline (backward compatible) |
+| `/run/reddito` | GET/POST | Run Reddito Disponibile Famiglie pipeline |
+| `/run/all` | GET/POST | Run all pipelines sequentially |
+
+---
+
+## How Edition-Based Versioning Works
+
+```
+1. Pipeline downloads new data from ISTAT API
+2. Extracts edition from response (e.g., "2025M10")
+3. Checks if *_LATEST.xlsx exists in Drive
+4. Compares editions:
+   
+   Same edition → Skip upload, log "not_updated"
+   Different edition → Archive old file, upload new, log "updated"
+   No existing file → Upload new file
+```
+
+### File Naming
+
+**Main folder:**
+```
+Reddito_disponibile_famiglie_LATEST.xlsx    ← Tableau connects here
+pipeline_log.txt                             ← Operation log
+```
+
+**Archive folder:**
+```
+Reddito_disponibile_famiglie_2025M10.xlsx   ← Archived when 2025M11 arrives
+Reddito_disponibile_famiglie_2025M07.xlsx   ← Previous editions
+```
+
+---
+
+## Adding a New Pipeline
+
+### Step 1: Create pipeline file
+
+Create `pipelines/your_pipeline_name.py`:
+
+```python
+"""
+Your Pipeline Name
+==================
+Description of data source and what it does.
+"""
+
+import io
+import pandas as pd
+from datetime import datetime
+
+# Configuration
+OUTPUT_FILENAME = "Your_pipeline_name_LATEST.xlsx"
+
+# Your specific configuration...
+
+def run_pipeline() -> dict:
+    """
+    Execute the pipeline.
+    
+    Returns:
+        dict with keys:
+        - status: 'success' or 'error'
+        - buffer: BytesIO with Excel file (if success)
+        - filename: OUTPUT_FILENAME
+        - edition: Edition string for comparison
+        - message: Error message (if error)
+        
+        Optional metadata keys:
+        - n_variables, n_observations, period_range, etc.
+    """
+    try:
+        # 1. Download data from your source
+        # 2. Process data
+        # 3. Create Excel in memory
+        
+        buffer = io.BytesIO()
+        # ... write Excel to buffer ...
+        
+        return {
+            'status': 'success',
+            'buffer': buffer,
+            'filename': OUTPUT_FILENAME,
+            'edition': 'YOUR_EDITION_STRING',
+            # ... other metadata ...
+        }
+        
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': str(e)
+        }
+```
+
+### Step 2: Add endpoint in `main.py`
+
+Add import and endpoint:
+
+```python
+@app.route('/run/your_pipeline', methods=['GET', 'POST'])
+def run_your_pipeline():
+    """Run Your Pipeline."""
+    try:
+        from pipelines import your_pipeline_name
+        
+        result = your_pipeline_name.run_pipeline()
+        
+        if result['status'] == 'error':
+            update_log("Your_pipeline_name", "error", "", result.get('message', ''))
+            return jsonify(result), 500
+        
+        upload_result = smart_upload(
+            buffer=result['buffer'],
+            filename=result['filename'],
+            edition=result['edition'],
+            folder_id=DRIVE_FOLDER_ID,
+            archive_folder_id=ARCHIVE_FOLDER_ID
+        )
+        
+        update_log("Your_pipeline_name", upload_result['status'], result['edition'])
+        
+        return jsonify(upload_result), 200
+        
+    except Exception as e:
+        update_log("Your_pipeline_name", "error", "", str(e))
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+```
+
+### Step 3: Add to `/run/all` endpoint
+
+In the `run_all()` function, add your pipeline to the list:
+
+```python
+pipelines = [
+    ('Reddito_disponibile_famiglie', run_reddito),
+    ('Your_pipeline_name', run_your_pipeline),  # Add here
+]
+```
+
+### Step 4: Deploy
+
+```bash
+gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
+```
+
+---
+
+## Deployment Commands
+
+### First-time setup
+
+```bash
+# Enable APIs
+gcloud services enable run.googleapis.com drive.googleapis.com cloudscheduler.googleapis.com
+
+# Deploy
+gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
+
+# Secure endpoint (optional but recommended)
+gcloud run services update istat-pipeline --region=europe-west1 --ingress=internal
+```
+
+### Update after code changes
+
+```bash
+gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
+```
+
+### Cloud Scheduler commands
+
+```bash
+# Create daily job at 8:30 AM Rome time
+gcloud scheduler jobs create http istat-daily-update \
+  --location=europe-west1 \
+  --schedule="30 8 * * *" \
+  --uri="https://istat-pipeline-953005439278.europe-west1.run.app/run/all" \
+  --http-method=GET \
+  --oidc-service-account-email=953005439278-compute@developer.gserviceaccount.com \
+  --time-zone="Europe/Rome"
+
+# Test manually
+gcloud scheduler jobs run istat-daily-update --location=europe-west1
+
+# Pause/Resume
+gcloud scheduler jobs pause istat-daily-update --location=europe-west1
+gcloud scheduler jobs resume istat-daily-update --location=europe-west1
+
+# Delete
+gcloud scheduler jobs delete istat-daily-update --location=europe-west1
+```
+
+---
+
+## Service Account Permissions
+
+The pipeline uses the default compute service account:
+```
+953005439278-compute@developer.gserviceaccount.com
+```
+
+This account must have:
+- **Content Manager** access to the Shared Drive (DATABASE3)
+- **Content Manager** access to the Archive folder
+
+---
+
+## Troubleshooting
+
+### Check logs
+```bash
+gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
+```
+
+### Test endpoints manually
+```bash
+# Health check
+curl https://istat-pipeline-953005439278.europe-west1.run.app/
+
+# Test Drive connection
+curl https://istat-pipeline-953005439278.europe-west1.run.app/test
+
+# Run specific pipeline
+curl https://istat-pipeline-953005439278.europe-west1.run.app/run/reddito
+```
+
+### Common errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| 403 Storage quota | Service account can't own files in personal Drive | Use Shared Drive |
+| 404 File not found | Wrong folder ID or no permission | Check folder ID and sharing |
+| 401 Invalid credentials | Session expired | Run `gcloud auth login` |
+
+---
+
+## Excel File Structure
+
+Each output file contains:
+
+### Sheet 1: Metadati
+Global metadata (edition, sector, dates, etc.) followed by variable-level metadata (code, name, flow direction).
+
+### Sheet 2: Dati
+Time series data with columns:
+- `PERIOD`: Quarter string (e.g., "2025Q1")
+- `YEAR`: Year number
+- `SEMESTER`: "Sem1" or "Sem2"
+- `QUARTER`: "Q1", "Q2", "Q3", "Q4"
+- Data columns with descriptive names
+
+---
+
+## Contact
+
+Project maintained by Paolo Refuto.
+
+For issues or modifications, share this README with Claude to provide context.

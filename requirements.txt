@@ -1,0 +1,12 @@
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+google-auth
+pandas
+requests
+numpy
+openpyxl
+python-dateutil
+lxml
+flask
+gunicorn
