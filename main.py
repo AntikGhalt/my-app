@@ -8,6 +8,11 @@ Each pipeline is a separate module in the pipelines/ folder.
 Author: Paolo Refuto
 Last Updated: December 2025
 """
+import sys
+print("=" * 50, file=sys.stderr)
+print("MAIN.PY: Starting imports...", file=sys.stderr)
+print("=" * 50, file=sys.stderr)
+
 import os
 import io
 from datetime import datetime
@@ -21,7 +26,10 @@ import pandas as pd
 # =============================================================================
 # FLASK APP INITIALIZATION
 # =============================================================================
+print("MAIN.PY: Creating Flask app...", file=sys.stderr)
 app = Flask(__name__)
+print(f"MAIN.PY: Flask app created: {app}", file=sys.stderr)
+print(f"MAIN.PY: App name: {app.name}", file=sys.stderr)
 
 # =============================================================================
 # CONFIGURATION
@@ -563,6 +571,12 @@ def run_legacy():
 # =============================================================================
 # LOCAL EXECUTION
 # =============================================================================
+
+# Debug: Print registered routes
+print("MAIN.PY: Routes registered:", file=sys.stderr)
+for rule in app.url_map.iter_rules():
+    print(f"  {rule.rule} -> {rule.endpoint}", file=sys.stderr)
+print("MAIN.PY: App ready!", file=sys.stderr)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
