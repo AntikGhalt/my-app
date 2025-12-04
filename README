@@ -250,12 +250,14 @@ The pipeline uses the default compute service account which must have **Content 
 ### Deploy or update
 
 ```bash
+
 gcloud run deploy istat-pipeline \
   --source . \
   --region europe-west1 \
   --allow-unauthenticated \
   --timeout=300 \
   --memory=1Gi
+
 ```
 
 ### Cloud Scheduler
@@ -294,6 +296,7 @@ gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
 ### Test endpoints
 
 ```bash
+
 SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
 echo "=== Health ===" && curl "$SERVICE_URL/"
 echo -e "\n=== Drive ===" && curl "$SERVICE_URL/test"
@@ -301,7 +304,7 @@ echo -e "\n=== Pipelines ===" && curl "$SERVICE_URL/pipelines"
 echo -e "\n=== Run All ===" && curl "$SERVICE_URL/run/all"
 
 
-
+```bash
 
 SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
 #chose whichone
