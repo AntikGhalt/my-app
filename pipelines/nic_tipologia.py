@@ -43,16 +43,8 @@ SOURCE_PATH = "PRICES / CONSUMER PRICES FOR THE WHOLE NATION / PREVIOUS BASES (N
 SOURCE_PATH_IT = "PREZZI / PREZZI AL CONSUMO PER L'INTERA COLLETTIVITA / BASI PRECEDENTI (NIC) / NIC MENSILI DAL 2016 (BASE 2015) / TIPOLOGIE DI PRODOTTO"
 
 # Query parameters
-START_PERIOD = "1995-01-01"
+START_PERIOD = "2016-01-01"
 END_PERIOD = "2030-12-31"
-
-# Territories (from API)
-# TERRITORIES = "IT+ITC+ITC1+ITC11+ITC12+ITC13+ITC14+ITC15+ITC16+ITC17+ITC18+ITC2+ITC20+ITC3+ITC31+ITC32+ITC33+ITC34+ITC4+ITC41+ITC42+ITC43+ITC44+ITC45+ITC46+ITC47+ITC48+ITC49+ITC4A+ITC4B+ITD+ITD1+ITD10+ITD2+ITD20+ITD3+ITD31+ITD32+ITD33+ITD34+ITD35+ITD36+ITD37+ITD4+ITD41+ITD42+ITD43+ITD44+ITD5+ITD51+ITD52+ITD53+ITD54+ITD55+ITD56+ITD57+ITD58+ITD59+ITDA+ITE+ITE1+ITE11+ITE12+ITE13+ITE14+ITE15+ITE16+ITE17+ITE18+ITE19+ITE1A+ITE2+ITE21+ITE22+ITE3+ITE31+ITE32+ITE33+ITE34+ITE4+ITE41+ITE42+ITE43+ITE44+ITE45+ITF+ITF1+ITF11+ITF12+ITF13+ITF14+ITF2+ITF21+ITF22+ITF3+ITF31+ITF32+ITF33+ITF34+ITF35+ITF4+ITF41+ITF42+ITF43+ITF44+ITF45+ITF5+ITF51+ITF52+ITF6+ITF61+ITF62+ITF63+ITF64+ITF65+ITG+ITG1+ITG11+ITG12+ITG13+ITG14+ITG15+ITG16+ITG17+ITG18+ITG19+ITG2+ITG25+ITG26+ITG27+ITG28+ITG29"
-TERRITORIES = ""
-
-# Product types (from API)
-# PRODUCT_TYPES = "00+00XAP+00XE+00XEFOOD+00XEFOODUNP+AP+APENRGY+APGOODS+APGOODSXAPE+APSERV+ENRGY+ENRGYXAPE+FOODHPC+FOODPROCXT+FOODUNP+FOODXT+FROOPP+GOODS+GOODSXAP+IGOODSXE+IGOODSXEDU+IGOODSXEND+IGOODSXESD+LOCAPSERV+LOWFRP+MEDFRP+NATAPSERV+OR1+OR2+OR3+SERV+SERVCOMM+SERVHOUSE+SERVMISC+SERVRP+SERVTRANS+SERVXAPS+TOBAC"
-PRODUCT_TYPES = ""
 
 VERBOSE = True
 
@@ -93,7 +85,6 @@ def fetch_codelists() -> tuple[dict, dict]:
             cl_id = cl.get('id')
             
             if cl_id == 'CL_ITTER107':
-                # Territory codelist
                 codes = cl.findall('.//structure:Code', ns)
                 for code in codes:
                     code_id = code.get('id')
@@ -109,7 +100,6 @@ def fetch_codelists() -> tuple[dict, dict]:
                     territory_names[code_id] = name_en
                     
             elif cl_id == 'CL_COICOP_2015':
-                # Product type codelist
                 codes = cl.findall('.//structure:Code', ns)
                 for code in codes:
                     code_id = code.get('id')
@@ -139,7 +129,9 @@ def download_nic_data() -> tuple[pd.DataFrame, list]:
     """
     log("[NIC_Tipologia] Downloading data from ISTAT...")
     
-    url = f"{BASE_URL}IT1,{DATAFLOW_ID},1.0/M.{TERRITORIES}.39.4.{PRODUCT_TYPES}/ALL/"
+    # Use empty strings to get ALL available codes
+    # Format: M.REF_AREA.DATA_TYPE.MEASURE.E_COICOP_REV_ISTAT
+    url = f"{BASE_URL}IT1,{DATAFLOW_ID},1.0/M..39.4./ALL/"
     
     params = {
         "detail": "full",
@@ -151,6 +143,7 @@ def download_nic_data() -> tuple[pd.DataFrame, list]:
     headers = {"Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"}
     
     try:
+        log(f"[NIC_Tipologia] URL: {url}")
         response = requests.get(url, params=params, headers=headers, timeout=600)
         response.raise_for_status()
     except Exception as e:
@@ -179,6 +172,10 @@ def download_nic_data() -> tuple[pd.DataFrame, list]:
     series_list = dataset.findall('.//generic:Series', ns) or dataset.findall('.//Series')
     log(f"[NIC_Tipologia] Found {len(series_list)} series")
     
+    if len(series_list) == 0:
+        log("[NIC_Tipologia] No series found in DataSet")
+        return None, []
+    
     # Extract data: {(territory, product): {period: value}}
     data = defaultdict(dict)
     all_periods = set()
@@ -206,7 +203,7 @@ def download_nic_data() -> tuple[pd.DataFrame, list]:
             obs_value = obs.find('.//generic:ObsValue', ns) or obs.find('.//ObsValue')
             
             if obs_dim is not None and obs_value is not None:
-                period = obs_dim.get('value', '').replace('-', 'M')  # 2024-01 → 2024M01
+                period = obs_dim.get('value', '').replace('-', 'M')
                 value = obs_value.get('value')
                 try:
                     data[(territory, product)][period] = float(value)
@@ -229,6 +226,10 @@ def download_nic_data() -> tuple[pd.DataFrame, list]:
         rows.append(row)
     
     df = pd.DataFrame(rows)
+    
+    if df.empty:
+        log("[NIC_Tipologia] No data extracted")
+        return None, []
     
     log(f"[NIC_Tipologia] Extracted {len(df)} rows, {len(sorted_periods)} periods")
     
@@ -263,16 +264,12 @@ def run_pipeline() -> dict:
         log("[NIC_Tipologia] Creating Excel file...")
         download_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Count unique territories and products
         n_territories = df['TERRITORY'].nunique()
         n_products = df['PRODUCT_TYPE'].nunique()
         
-        # Build data API URL for metadata
-        data_api_url = f"{BASE_URL}IT1,{DATAFLOW_ID},1.0/M.{TERRITORIES[:50]}...{PRODUCT_TYPES[:50]}.../ALL/"
-        
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            # Metadati sheet
+            # Metadata sheet
             meta_rows = [
                 ("edition", ""),
                 ("edition_type", "DateDownload"),
@@ -280,7 +277,6 @@ def run_pipeline() -> dict:
                 ("source_path", SOURCE_PATH),
                 ("source_path_it", SOURCE_PATH_IT),
                 ("dataflow_url", STRUCTURE_URL),
-                ("data_api_url", data_api_url + " (truncated)"),
                 ("measure", "Index numbers"),
                 ("measure_code", "4"),
                 ("frequency", "Monthly"),
@@ -296,22 +292,20 @@ def run_pipeline() -> dict:
             df_meta = pd.DataFrame(meta_rows, columns=["key", "value"])
             df_meta.to_excel(writer, sheet_name="Metadata", index=False)
             
-            # Dati sheet
+            # Data sheet
             df.to_excel(writer, sheet_name="Data", index=False)
             
             # Formatting
             ws_data = writer.sheets["Data"]
             ws_meta = writer.sheets["Metadata"]
             
-            # Format Data sheet
-            ws_data.column_dimensions['A'].width = 12  # TERRITORY
-            ws_data.column_dimensions['B'].width = 40  # TERRITORY_NAME
-            ws_data.column_dimensions['C'].width = 15  # PRODUCT_TYPE
-            ws_data.column_dimensions['D'].width = 40  # PRODUCT_NAME
+            ws_data.column_dimensions['A'].width = 12
+            ws_data.column_dimensions['B'].width = 40
+            ws_data.column_dimensions['C'].width = 15
+            ws_data.column_dimensions['D'].width = 40
             for i in range(5, len(df.columns) + 1):
                 ws_data.column_dimensions[get_column_letter(i)].width = 10
             
-            # Format Metadata sheet
             ws_meta.column_dimensions['A'].width = 20
             ws_meta.column_dimensions['B'].width = 80
         
@@ -321,7 +315,7 @@ def run_pipeline() -> dict:
             'status': 'success',
             'buffer': buffer,
             'filename': OUTPUT_FILENAME,
-            'edition': None,  # DateDownload versioning
+            'edition': None,
             'n_variables': len(df),
             'n_observations': len(df) * len(periods),
             'period_range': f"{periods[0]} → {periods[-1]}" if periods else None,
