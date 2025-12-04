@@ -266,6 +266,26 @@ This account must have:
 
 ## Troubleshooting
 
+### Quick copy-paste test (Cloud Run)
+
+```bash
+# Authenticate (skip if already logged in)
+gcloud auth login
+gcloud config set project <PROJECT_ID>
+
+# Get the service URL and hit the three main routes
+SERVICE_URL=$(gcloud run services describe istat-pipeline --region=europe-west1 --format='value(status.url)')
+curl "${SERVICE_URL}/"          # health check
+curl "${SERVICE_URL}/test"      # Drive connectivity test
+curl "${SERVICE_URL}/run"       # legacy default route
+```
+
+If any call returns 404, the container likely isn’t serving the expected Flask app. Tail logs to confirm the process booted correctly:
+
+```bash
+gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
+```
+
 ### Check logs
 ```bash
 gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
@@ -281,6 +301,45 @@ curl https://istat-pipeline-953005439278.europe-west1.run.app/test
 
 # Run specific pipeline
 curl https://istat-pipeline-953005439278.europe-west1.run.app/run/reddito
+```
+
+## How to test
+
+### 1) Local smoke test (with credentials)
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Provide Google credentials so Drive calls work
+gcloud auth application-default login               # or set GOOGLE_APPLICATION_CREDENTIALS=/path/key.json
+
+# Run locally (respects PORT env as on Cloud Run)
+export PORT=8080
+gunicorn -b 0.0.0.0:${PORT} main:app
+
+# In another shell, hit the endpoints
+curl http://localhost:8080/
+curl http://localhost:8080/test
+curl http://localhost:8080/run/reddito
+```
+
+### 2) Deployed service verification
+```bash
+gcloud auth login
+gcloud config set project <PROJECT_ID>
+gcloud run deploy istat-pipeline --source . --region=europe-west1 --timeout=300 --memory=1Gi
+
+SERVICE_URL=$(gcloud run services describe istat-pipeline --region=europe-west1 --format='value(status.url)')
+curl "${SERVICE_URL}/"          # health
+curl "${SERVICE_URL}/test"      # Drive connectivity
+curl "${SERVICE_URL}/run"       # legacy default route
+curl "${SERVICE_URL}/run/reddito"  # explicit pipeline
+```
+
+### 3) Logs if something fails
+```bash
+gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
 ```
 
 ### Common errors
