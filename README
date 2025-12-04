@@ -1,18 +1,18 @@
 # ISTAT/EUROSTAT Data Pipeline
 
-Automated data pipeline that fetches statistical data from ISTAT/EUROSTAT APIs and uploads processed Excel files to Google Drive.
+Automated data pipeline that fetches statistical data from ISTAT/EUROSTAT APIs and uploads processed Excel files to Google Drive with intelligent version management.
 
 ## Overview
 
-This system runs on **Google Cloud Run** and is triggered by **Cloud Scheduler**. It downloads data from statistical APIs, processes it into Excel files, and uploads them to a Google Shared Drive with smart version management.
+This system runs on **Google Cloud Run** and is triggered by **Cloud Scheduler**. It downloads data from statistical APIs, processes it into Excel files, and uploads them to a Google Shared Drive.
 
 ### Key Features
 
-- **Edition-based versioning**: Only uploads when data edition changes
-- **Automatic archiving**: Old files are moved to Archive folder when new edition arrives
-- **Logging**: All operations are logged to `pipeline_log.txt`
-- **Fixed filenames**: Output files have fixed names (e.g., `*_LATEST.xlsx`) for Tableau integration
-- **Modular design**: Each data source is a separate pipeline file
+- **Auto-discovery**: Just add a new pipeline file in `pipelines/` folder - no code changes needed
+- **Smart versioning**: Supports both Edition-based and DateDownload-based archiving
+- **Automatic archiving**: Old files are moved to Archive folder with version suffix
+- **Fixed filenames**: Output files always have `_LATEST.xlsx` suffix for Tableau compatibility
+- **Logging**: All operations are logged to `pipeline_log.txt` in Google Drive
 
 ---
 
@@ -20,34 +20,86 @@ This system runs on **Google Cloud Run** and is triggered by **Cloud Scheduler**
 
 ```
 my-app/
-├── Dockerfile          ← Fixed: uses Gunicorn with main:app
-├── main.py             ← Flask app with routes + Drive utilities
-├── pipelines/
-│   ├── __init__.py     ← Package marker
-│   └── istat_reddito_famiglie.py  ← ISTAT data pipeline
-└── requirements.txt                        # This file
+├── Dockerfile              # Container configuration
+├── main.py                 # Flask app with auto-discovery and smart upload
+├── requirements.txt        # Python dependencies
+├── README.md               # This file
+└── pipelines/
+    ├── __init__.py                         # Package marker
+    ├── istat_reddito_famiglie.py           # ISTAT household income (Edition-based)
+    ├── istat_reddito_famiglie_test.py      # Test pipeline
+    └── example_datedownload_pipeline.py    # Template for DateDownload pipelines
 ```
 
 ---
 
-## Configuration
+## Versioning System
 
-### Google Drive IDs (in `main.py`)
+The pipeline supports two versioning modes:
 
+### 1. Edition-based Versioning
+
+Used for data sources that have official edition/release identifiers (e.g., ISTAT releases).
+
+**How it works:**
+- Pipeline returns `edition` value (e.g., "2025M10")
+- File is archived only when edition changes
+- Archive name: `FILE_2025M10_Edition.xlsx`
+
+**In pipeline code:**
 ```python
-DRIVE_FOLDER_ID = "0ACZ58HkBSJpjUk9PVA"           # Main folder (DATABASE3)
-ARCHIVE_FOLDER_ID = "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu"  # Archive subfolder
+return {
+    'status': 'success',
+    'buffer': buffer,
+    'filename': 'MyData_LATEST.xlsx',
+    'edition': '2025M10',  # <-- Triggers Edition-based versioning
+    ...
+}
 ```
 
-### Pipeline Configuration (in each pipeline file)
-
-Each pipeline has its own configuration section:
-
-```python
-OUTPUT_FILENAME = "Reddito_disponibile_famiglie_LATEST.xlsx"
-SECTOR = 'S14A'
-AGGREGATES = { ... }  # Which data series to download
+**In Excel Metadati sheet:**
 ```
+chiave          valore
+edition         2025M10
+edition_type    Edition
+download_date   2025-12-04 12:30:00
+```
+
+### 2. DateDownload-based Versioning
+
+Used for data sources without official editions. Archives monthly based on download date.
+
+**How it works:**
+- Pipeline returns `edition: None` or empty
+- File is archived when month changes
+- Archive name: `FILE_2025M12_DateDownload.xlsx`
+
+**In pipeline code:**
+```python
+return {
+    'status': 'success',
+    'buffer': buffer,
+    'filename': 'MyData_LATEST.xlsx',
+    'edition': None,  # <-- Triggers DateDownload-based versioning
+    ...
+}
+```
+
+**In Excel Metadati sheet:**
+```
+chiave          valore
+edition         
+edition_type    DateDownload
+download_date   2025-12-04 12:30:00
+```
+
+### Archive Naming Convention
+
+| Versioning Type | Archive Filename |
+|-----------------|------------------|
+| Edition-based | `FILE_2025M10_Edition.xlsx` |
+| DateDownload-based | `FILE_2025M12_DateDownload.xlsx` |
+| Error/Missing metadata | `FILE_20251204_123000_ErrorNoMetadata.xlsx` |
 
 ---
 
@@ -57,37 +109,25 @@ AGGREGATES = { ... }  # Which data series to download
 |----------|--------|-------------|
 | `/` | GET | Health check |
 | `/test` | GET | Test Google Drive connection |
+| `/pipelines` | GET | List all available pipelines |
 | `/run` | GET/POST | Run default pipeline (backward compatible) |
-| `/run/reddito` | GET/POST | Run Reddito Disponibile Famiglie pipeline |
+| `/run/<pipeline_name>` | GET/POST | Run specific pipeline by name |
 | `/run/all` | GET/POST | Run all pipelines sequentially |
 
----
+### Examples
 
-## How Edition-Based Versioning Works
+```bash
+# Health check
+curl https://your-service.run.app/
 
-```
-1. Pipeline downloads new data from ISTAT API
-2. Extracts edition from response (e.g., "2025M10")
-3. Checks if *_LATEST.xlsx exists in Drive
-4. Compares editions:
-   
-   Same edition → Skip upload, log "not_updated"
-   Different edition → Archive old file, upload new, log "updated"
-   No existing file → Upload new file
-```
+# List available pipelines
+curl https://your-service.run.app/pipelines
 
-### File Naming
+# Run specific pipeline
+curl https://your-service.run.app/run/istat_reddito_famiglie
 
-**Main folder:**
-```
-Reddito_disponibile_famiglie_LATEST.xlsx    ← Tableau connects here
-pipeline_log.txt                             ← Operation log
-```
-
-**Archive folder:**
-```
-Reddito_disponibile_famiglie_2025M10.xlsx   ← Archived when 2025M11 arrives
-Reddito_disponibile_famiglie_2025M07.xlsx   ← Previous editions
+# Run all pipelines
+curl https://your-service.run.app/run/all
 ```
 
 ---
@@ -102,134 +142,126 @@ Create `pipelines/your_pipeline_name.py`:
 """
 Your Pipeline Name
 ==================
-Description of data source and what it does.
+Description of what this pipeline does.
+
+Versioning: Edition-based OR DateDownload-based
 """
 
 import io
 import pandas as pd
 from datetime import datetime
+from openpyxl.utils import get_column_letter
 
-# Configuration
-OUTPUT_FILENAME = "Your_pipeline_name_LATEST.xlsx"
-
-# Your specific configuration...
+OUTPUT_FILENAME = "Your_data_LATEST.xlsx"
 
 def run_pipeline() -> dict:
     """
     Execute the pipeline.
     
-    Returns:
-        dict with keys:
-        - status: 'success' or 'error'
-        - buffer: BytesIO with Excel file (if success)
-        - filename: OUTPUT_FILENAME
-        - edition: Edition string for comparison
-        - message: Error message (if error)
-        
-        Optional metadata keys:
-        - n_variables, n_observations, period_range, etc.
+    Must return dict with:
+    - status: 'success' or 'error'
+    - buffer: BytesIO with Excel file (if success)
+    - filename: OUTPUT_FILENAME
+    - edition: Edition string OR None for DateDownload
+    - message: Error message (if error)
+    
+    Optional metadata:
+    - n_variables, n_observations, period_range, etc.
     """
     try:
-        # 1. Download data from your source
+        # 1. Download data
         # 2. Process data
-        # 3. Create Excel in memory
+        # 3. Create Excel with proper Metadati sheet
+        
+        download_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         buffer = io.BytesIO()
-        # ... write Excel to buffer ...
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            # Metadati - REQUIRED for versioning!
+            meta = pd.DataFrame([
+                ("edition", "2025M10"),        # Or empty for DateDownload
+                ("edition_type", "Edition"),   # Or "DateDownload"
+                ("download_date", download_date),
+                # ... other metadata
+            ], columns=["chiave", "valore"])
+            meta.to_excel(writer, sheet_name="Metadati", index=False)
+            
+            # Your data
+            df.to_excel(writer, sheet_name="Dati", index=False)
         
         return {
             'status': 'success',
             'buffer': buffer,
             'filename': OUTPUT_FILENAME,
-            'edition': 'YOUR_EDITION_STRING',
-            # ... other metadata ...
+            'edition': '2025M10',  # Or None for DateDownload
+            'n_variables': 10,
+            'n_observations': 100,
         }
         
     except Exception as e:
-        return {
-            'status': 'error',
-            'message': str(e)
-        }
+        return {'status': 'error', 'message': str(e)}
 ```
 
-### Step 2: Add endpoint in `main.py`
-
-Add import and endpoint:
-
-```python
-@app.route('/run/your_pipeline', methods=['GET', 'POST'])
-def run_your_pipeline():
-    """Run Your Pipeline."""
-    try:
-        from pipelines import your_pipeline_name
-        
-        result = your_pipeline_name.run_pipeline()
-        
-        if result['status'] == 'error':
-            update_log("Your_pipeline_name", "error", "", result.get('message', ''))
-            return jsonify(result), 500
-        
-        upload_result = smart_upload(
-            buffer=result['buffer'],
-            filename=result['filename'],
-            edition=result['edition'],
-            folder_id=DRIVE_FOLDER_ID,
-            archive_folder_id=ARCHIVE_FOLDER_ID
-        )
-        
-        update_log("Your_pipeline_name", upload_result['status'], result['edition'])
-        
-        return jsonify(upload_result), 200
-        
-    except Exception as e:
-        update_log("Your_pipeline_name", "error", "", str(e))
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-```
-
-### Step 3: Add to `/run/all` endpoint
-
-In the `run_all()` function, add your pipeline to the list:
-
-```python
-pipelines = [
-    ('Reddito_disponibile_famiglie', run_reddito),
-    ('Your_pipeline_name', run_your_pipeline),  # Add here
-]
-```
-
-### Step 4: Deploy
+### Step 2: Deploy
 
 ```bash
 gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
 ```
+
+That's it! The pipeline is automatically discovered and available at `/run/your_pipeline_name`.
+
+---
+
+## Required Excel Metadati Fields
+
+For proper versioning, include these fields in the Metadati sheet:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `edition` | Yes* | Edition identifier (e.g., "2025M10"). Empty for DateDownload. |
+| `edition_type` | Yes | Either "Edition" or "DateDownload" |
+| `download_date` | Yes | Timestamp of data download |
+
+*Can be empty if edition_type is "DateDownload"
+
+---
+
+## Configuration
+
+### Google Drive IDs
+
+Set via environment variables or defaults in `main.py`:
+
+```python
+DRIVE_FOLDER_ID = "0ACZ58HkBSJpjUk9PVA"           # Main folder (DATABASE3)
+ARCHIVE_FOLDER_ID = "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu"  # Archive subfolder
+```
+
+### Service Account
+
+The pipeline uses the default compute service account which must have **Content Manager** access to:
+- Main Shared Drive folder
+- Archive subfolder
 
 ---
 
 ## Deployment Commands
 
-### First-time setup
+### Deploy or update
 
 ```bash
-# Enable APIs
-gcloud services enable run.googleapis.com drive.googleapis.com cloudscheduler.googleapis.com
-
-# Deploy
-gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
-
-# Secure endpoint (optional but recommended)
-gcloud run services update istat-pipeline --region=europe-west1 --ingress=internal
+gcloud run deploy istat-pipeline \
+  --source . \
+  --region europe-west1 \
+  --allow-unauthenticated \
+  --timeout=300 \
+  --memory=1Gi
 ```
 
-### Update after code changes
+### Cloud Scheduler
 
 ```bash
-gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
-```
-
-### Cloud Scheduler commands
-
-```bash
-# Create daily job at 8:30 AM Rome time
+# Create daily job at 8:30 AM Rome time (runs all pipelines)
 gcloud scheduler jobs create http istat-daily-update \
   --location=europe-west1 \
   --schedule="30 8 * * *" \
@@ -241,131 +273,85 @@ gcloud scheduler jobs create http istat-daily-update \
 # Test manually
 gcloud scheduler jobs run istat-daily-update --location=europe-west1
 
-# Pause/Resume
-gcloud scheduler jobs pause istat-daily-update --location=europe-west1
-gcloud scheduler jobs resume istat-daily-update --location=europe-west1
-
-# Delete
-gcloud scheduler jobs delete istat-daily-update --location=europe-west1
+# Update existing job
+gcloud scheduler jobs update http istat-daily-update \
+  --location=europe-west1 \
+  --uri="https://istat-pipeline-953005439278.europe-west1.run.app/run/all"
 ```
 
----
-
-## Service Account Permissions
-
-The pipeline uses the default compute service account:
-```
-953005439278-compute@developer.gserviceaccount.com
-```
-
-This account must have:
-- **Content Manager** access to the Shared Drive (DATABASE3)
-- **Content Manager** access to the Archive folder
+**Note:** Google Cloud free tier includes 3 scheduler jobs. Using `/run/all` with one scheduler is recommended.
 
 ---
 
 ## Troubleshooting
 
-### Quick copy-paste test (Cloud Run)
-
-```bash
-# Authenticate (skip if already logged in)
-gcloud auth login
-gcloud config set project <PROJECT_ID>
-
-# Get the service URL and hit the three main routes
-SERVICE_URL=$(gcloud run services describe istat-pipeline --region=europe-west1 --format='value(status.url)')
-curl "${SERVICE_URL}/"          # health check
-curl "${SERVICE_URL}/test"      # Drive connectivity test
-curl "${SERVICE_URL}/run"       # legacy default route
-```
-
-If any call returns 404, the container likely isn’t serving the expected Flask app. Tail logs to confirm the process booted correctly:
-
-```bash
-gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
-```
-
 ### Check logs
+
 ```bash
 gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
 ```
 
-### Test endpoints manually
+### Test endpoints
+
 ```bash
-# Health check
-curl https://istat-pipeline-953005439278.europe-west1.run.app/
+SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
+echo "=== Health ===" && curl "$SERVICE_URL/"
+echo -e "\n=== Drive ===" && curl "$SERVICE_URL/test"
+echo -e "\n=== Pipelines ===" && curl "$SERVICE_URL/pipelines"
+echo -e "\n=== Run All ===" && curl "$SERVICE_URL/run/all"
 
-# Test Drive connection
-curl https://istat-pipeline-953005439278.europe-west1.run.app/test
 
-# Run specific pipeline
-curl https://istat-pipeline-953005439278.europe-west1.run.app/run/reddito
-```
 
-## How to test
 
-### 1) Local smoke test (with credentials)
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
+#chose whichone
 
-# Provide Google credentials so Drive calls work
-gcloud auth application-default login               # or set GOOGLE_APPLICATION_CREDENTIALS=/path/key.json
+# Reddito famiglie (principale)
+curl "$SERVICE_URL/run/istat_reddito_famiglie"
 
-# Run locally (respects PORT env as on Cloud Run)
-export PORT=8080
-gunicorn -b 0.0.0.0:${PORT} main:app
+# Reddito famiglie test (senza rettifica)
+curl "$SERVICE_URL/run/istat_reddito_famiglie_test"
 
-# In another shell, hit the endpoints
-curl http://localhost:8080/
-curl http://localhost:8080/test
-curl http://localhost:8080/run/reddito
-```
+# Example datedownload (se lo aggiungi)
+curl "$SERVICE_URL/run/example_datedownload_pipeline"
 
-### 2) Deployed service verification
-```bash
-gcloud auth login
-gcloud config set project <PROJECT_ID>
-gcloud run deploy istat-pipeline --source . --region=europe-west1 --timeout=300 --memory=1Gi
-
-SERVICE_URL=$(gcloud run services describe istat-pipeline --region=europe-west1 --format='value(status.url)')
-curl "${SERVICE_URL}/"          # health
-curl "${SERVICE_URL}/test"      # Drive connectivity
-curl "${SERVICE_URL}/run"       # legacy default route
-curl "${SERVICE_URL}/run/reddito"  # explicit pipeline
-```
-
-### 3) Logs if something fails
-```bash
-gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
 ```
 
 ### Common errors
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| 403 Storage quota | Service account can't own files in personal Drive | Use Shared Drive |
-| 404 File not found | Wrong folder ID or no permission | Check folder ID and sharing |
-| 401 Invalid credentials | Session expired | Run `gcloud auth login` |
+| 404 Not Found | Pipeline not found | Check filename matches endpoint name |
+| 403 Drive error | Permission issue | Verify service account has Content Manager access |
+| No edition found | API changed | Check ISTAT API availability |
+| Timeout | Slow download | Increase `--timeout` in deploy command |
 
 ---
 
-## Excel File Structure
+## File Locations
 
-Each output file contains:
+### Main folder (DATABASE3)
+```
+Reddito_disponibile_famiglie_LATEST.xlsx    ← Tableau connects here
+pipeline_log.txt                             ← Operation log
+```
 
-### Sheet 1: Metadati
-Global metadata (edition, sector, dates, etc.) followed by variable-level metadata (code, name, flow direction).
+### Archive folder
+```
+Reddito_disponibile_famiglie_2025M10_Edition.xlsx
+Reddito_disponibile_famiglie_2025M09_Edition.xlsx
+OtherData_2025M11_DateDownload.xlsx
+```
 
-### Sheet 2: Dati
-Time series data with columns:
-- `PERIOD`: Quarter string (e.g., "2025Q1")
-- `YEAR`: Year number
-- `SEMESTER`: "Sem1" or "Sem2"
-- `QUARTER`: "Q1", "Q2", "Q3", "Q4"
-- Data columns with descriptive names
+---
+
+## Log Format
+
+```
+[2025-12-04 12:30:00] Pipeline_name: updated; version: 2025M10_Edition
+[2025-12-04 12:30:00] Pipeline_name: not_updated; version: 2025M10_Edition (unchanged)
+[2025-12-04 12:30:00] Pipeline_name: error; Error message here
+```
 
 ---
 

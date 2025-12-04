@@ -1,16 +1,15 @@
-# istat_reddito_famiglie.py
+# istat_reddito_famiglie_test.py
 
 """
-ISTAT Reddito Disponibile Famiglie Pipeline
-============================================
-Downloads quarterly household disposable income data from ISTAT SDMX API
-and processes it into an Excel file.
+ISTAT Reddito Disponibile Famiglie TEST Pipeline
+=================================================
+Test pipeline - same as main but WITHOUT D8_C_W0 (Rettifica).
 
 Source: ISTAT - Conti economici trimestrali dei settori istituzionali
 Dataflow: 162_1064_DF_DCCN_ISTITUZ_QNA1_1
 Sector: S14A (Consumer households / Famiglie consumatrici)
 
-Output: Reddito_disponibile_famiglie_LATEST.xlsx
+Output: Reddito_disponibile_famiglie_test_LATEST.xlsx
 """
 
 import io
@@ -30,7 +29,7 @@ from openpyxl.styles import Alignment
 # =============================================================================
 
 # Output filename (fixed name for Tableau)
-OUTPUT_FILENAME = "Reddito_disponibile_famiglie_LATEST.xlsx"
+OUTPUT_FILENAME = "Reddito_disponibile_famiglie_test_LATEST.xlsx"
 
 # ISTAT API Configuration
 BASE_URL = "https://esploradati.istat.it/SDMXWS/rest/data/"
@@ -48,6 +47,7 @@ NEGATE_IMPIEGO = True               # Make IMPIEGO series negative
 VERBOSE = False                     # Debug logging
 
 # Aggregates to download (1 = download, 0 = ignore)
+# NOTE: D8_C_W0 (Rettifica) is EXCLUDED in this test pipeline
 AGGREGATES = {
     # CONTO DELLA ATTRIBUZIONE DEI REDDITI PRIMARI
     'B2A3G_B_W0_X1': 1,   # RISORSA - Risultato lordo di gestione e reddito misto lordo
@@ -66,8 +66,7 @@ AGGREGATES = {
     'D7_D_W0': 1,         # IMPIEGO - Altri trasferimenti correnti
     'B6G_B_W0': 1,        # SALDO - Reddito disponibile lordo
     
-    # CONTO DI UTILIZZAZIONE DEL REDDITO DISPONIBILE
-    'D8_C_W0': 1,         # RISORSA - Rettifica per variazione dei diritti pensionistici
+    # EXCLUDED: D8_C_W0 - Rettifica per variazione dei diritti pensionistici
 }
 
 # Descriptive names for aggregates
@@ -85,7 +84,6 @@ AGGREGATES_NAMES = {
     'D62_D_W0': 'IMPIEGO - Prestazioni sociali diverse dai trasferimenti sociali in natura',
     'D7_D_W0': 'IMPIEGO - Altri trasferimenti correnti',
     'B6G_B_W0': 'SALDO - Reddito disponibile lordo',
-    'D8_C_W0': 'RISORSA - Rettifica per variazione dei diritti pensionistici',
 }
 
 
@@ -102,17 +100,6 @@ def _log(msg):
 def find_latest_edition(sector: str, aggregates_str: str, max_months_back: int = 24) -> str:
     """
     Find the most recent available edition by searching backwards.
-    
-    Args:
-        sector: Institutional sector code
-        aggregates_str: Plus-separated aggregate codes
-        max_months_back: How many months to search backwards
-    
-    Returns:
-        Edition string (e.g., "2025M10")
-    
-    Raises:
-        RuntimeError: If no valid edition found
     """
     start_date = datetime.now()
     
@@ -191,17 +178,6 @@ def download_istat_data(aggregates_dict: dict, sector: str, edition: str,
                         use_latest_edition: bool = True) -> tuple[pd.DataFrame, str]:
     """
     Download ISTAT data for specified aggregates and sector.
-    
-    Args:
-        aggregates_dict: Dictionary of aggregate codes with 1/0 flags
-        sector: Institutional sector code
-        edition: Edition to use if not searching for latest
-        start_period: Start period filter
-        end_period: End period filter
-        use_latest_edition: Whether to search for latest edition
-    
-    Returns:
-        Tuple of (DataFrame, edition_used)
     """
     active_aggregates = [agg for agg, flag in aggregates_dict.items() if flag == 1]
 
@@ -340,14 +316,6 @@ def download_istat_data(aggregates_dict: dict, sector: str, edition: str,
 def extract_series(df: pd.DataFrame, aggregate_code: str, sector: str) -> pd.Series:
     """
     Extract time series for a specific aggregate and sector.
-    
-    Args:
-        df: Raw DataFrame from ISTAT
-        aggregate_code: Aggregate code to extract
-        sector: Sector code
-    
-    Returns:
-        pandas Series with PeriodIndex
     """
     if df is None or df.empty:
         return None
@@ -380,13 +348,6 @@ def extract_series(df: pd.DataFrame, aggregate_code: str, sector: str) -> pd.Ser
 def classify_aggregate(code: str) -> tuple[str, str, str]:
     """
     Classify an aggregate code and extract clean name.
-    
-    Args:
-        code: Aggregate code
-    
-    Returns:
-        Tuple of (clean_name, flow_direction, raw_label)
-        flow_direction is one of: 'RISORSA', 'IMPIEGO', 'SALDO', 'AMMORTAMENTO', None
     """
     label = AGGREGATES_NAMES.get(code, code)
     clean_label = label
@@ -416,12 +377,6 @@ def classify_aggregate(code: str) -> tuple[str, str, str]:
 def build_series_metadata(codes: list) -> dict:
     """
     Build metadata dictionary for aggregate codes.
-    
-    Args:
-        codes: List of aggregate codes
-    
-    Returns:
-        Dictionary with metadata for each code
     """
     meta = {}
     for code in codes:
@@ -438,14 +393,6 @@ def build_series_metadata(codes: list) -> dict:
 def apply_flow_signs(series_dict: dict, series_meta: dict, negate_impiego: bool = True) -> dict:
     """
     Make IMPIEGO series negative if requested.
-    
-    Args:
-        series_dict: Dictionary of series
-        series_meta: Metadata dictionary
-        negate_impiego: Whether to negate IMPIEGO flows
-    
-    Returns:
-        Adjusted series dictionary
     """
     if not negate_impiego:
         return series_dict
@@ -467,20 +414,12 @@ def apply_flow_signs(series_dict: dict, series_meta: dict, negate_impiego: bool 
 def run_pipeline() -> dict:
     """
     Execute the complete pipeline: download, process, create Excel.
-    
-    Returns:
-        Dictionary with:
-        - status: 'success' or 'error'
-        - buffer: BytesIO with Excel file (if success)
-        - filename: Output filename
-        - edition: Data edition
-        - metadata: Additional information
     """
-    print(f"[Reddito_disponibile_famiglie] Pipeline started at {datetime.now().isoformat()}")
+    print(f"[Reddito_disponibile_famiglie_test] Pipeline started at {datetime.now().isoformat()}")
     
     try:
         # 1. Download raw data
-        print("[Reddito_disponibile_famiglie] Downloading ISTAT data...")
+        print("[Reddito_disponibile_famiglie_test] Downloading ISTAT data...")
         df, used_edition = download_istat_data(
             aggregates_dict=AGGREGATES,
             sector=SECTOR,
@@ -496,7 +435,7 @@ def run_pipeline() -> dict:
                 'message': 'Download failed, no data received'
             }
 
-        print(f"[Reddito_disponibile_famiglie] Downloaded {len(df)} observations, edition: {used_edition}")
+        print(f"[Reddito_disponibile_famiglie_test] Downloaded {len(df)} observations, edition: {used_edition}")
 
         # 2. Extract series for active aggregates
         active_aggregates = [agg for agg, flag in AGGREGATES.items() if flag == 1]
@@ -513,7 +452,7 @@ def run_pipeline() -> dict:
                 'message': 'No series extracted for selected aggregates'
             }
 
-        print(f"[Reddito_disponibile_famiglie] Extracted {len(series_dict)} series")
+        print(f"[Reddito_disponibile_famiglie_test] Extracted {len(series_dict)} series")
 
         # 3. Build metadata
         series_meta = build_series_metadata(series_dict.keys())
@@ -557,7 +496,7 @@ def run_pipeline() -> dict:
         df_output_nomi.rename(columns=rename_map, inplace=True)
 
         # 7. Prepare Excel file in memory
-        print("[Reddito_disponibile_famiglie] Creating Excel file...")
+        print("[Reddito_disponibile_famiglie_test] Creating Excel file...")
         
         # Global metadata
         global_meta_rows = [
@@ -571,6 +510,7 @@ def run_pipeline() -> dict:
             ("period_max", str(period_max)),
             ("download_date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             ("n_variables", len(var_cols)),
+            ("note", "TEST pipeline - excludes D8_C_W0 (Rettifica)"),
         ]
         df_global_meta = pd.DataFrame(global_meta_rows, columns=["chiave", "valore"])
 
@@ -619,7 +559,7 @@ def run_pipeline() -> dict:
                 col_letter = get_column_letter(col_idx)
                 ws_meta.column_dimensions[col_letter].width = 30
 
-        print(f"[Reddito_disponibile_famiglie] Pipeline completed successfully")
+        print(f"[Reddito_disponibile_famiglie_test] Pipeline completed successfully")
         
         return {
             'status': 'success',

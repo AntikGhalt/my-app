@@ -562,8 +562,6 @@ def run_pipeline() -> dict:
         # Global metadata
         global_meta_rows = [
             ("edition", used_edition),
-            ("edition_type", "Edition"),
-            ("download_date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             ("sector", SECTOR),
             ("sector_description", "Famiglie consumatrici"),
             ("dataflow", DATAFLOW),
