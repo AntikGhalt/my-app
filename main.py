@@ -412,6 +412,24 @@ def health_check():
     })
 
 
+@app.errorhandler(404)
+def handle_not_found(error):
+    """Return a JSON 404 so we can see the request hit the app."""
+    return jsonify({
+        'status': 'error',
+        'message': 'route not found',
+        'path': str(getattr(error, 'description', '')),
+        'available_routes': [
+            '/',
+            '/test',
+            '/run',
+            '/run/reddito',
+            '/run/all'
+        ],
+        'timestamp': datetime.now().isoformat()
+    }), 404
+
+
 @app.route('/test')
 def test_drive():
     """Test Google Drive connection."""
