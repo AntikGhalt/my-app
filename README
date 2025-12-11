@@ -1,201 +1,350 @@
-# ISTAT/EUROSTAT Data Pipeline
+# ISTAT Data Pipeline
 
-Automated data pipeline that fetches statistical data from ISTAT/EUROSTAT APIs and uploads processed Excel files to Google Drive with intelligent version management.
+Sistema automatizzato per il download, elaborazione e archiviazione di dati statistici ISTAT su Google Drive.
+
+**Autore:** Paolo Refuto  
+**Ultimo aggiornamento:** Dicembre 2025
+
+---
+
+## Indice
+
+1. [Overview](#overview)
+2. [Architettura](#architettura)
+3. [Note Metodologiche](#note-metodologiche)
+   - [API ISTAT e Rate Limiting](#api-istat-e-rate-limiting)
+   - [Gestione Lunghezza URL](#gestione-lunghezza-url)
+   - [Sistema di Versioning](#sistema-di-versioning)
+   - [Logica di Archiviazione](#logica-di-archiviazione)
+4. [Pipeline Disponibili](#pipeline-disponibili)
+5. [Aggiungere Nuove Pipeline](#aggiungere-nuove-pipeline)
+6. [Configurazione Google Drive](#configurazione-google-drive)
+7. [Troubleshooting](#troubleshooting)
+8. [Comandi Utili](#comandi-utili)
+
+---
 
 ## Overview
 
-This system runs on **Google Cloud Run** and is triggered by **Cloud Scheduler**. It downloads data from statistical APIs, processes it into Excel files, and uploads them to a Google Shared Drive.
+Il sistema esegue su **Google Cloud Run** ed è attivato quotidianamente da **Cloud Scheduler**. Scarica dati dalle API SDMX di ISTAT, li elabora in file Excel e li carica su Google Shared Drive con gestione automatica delle versioni.
 
-### Key Features
+### Caratteristiche principali
 
-- **Auto-discovery**: Just add a new pipeline file in `pipelines/` folder - no code changes needed
-- **Smart versioning**: Supports both Edition-based and DateDownload-based archiving
-- **Automatic archiving**: Old files are moved to Archive folder with version suffix
-- **Fixed filenames**: Output files always have `_LATEST.xlsx` suffix for Tableau compatibility
-- **Logging**: All operations are logged to `pipeline_log.txt` in Google Drive
+- **Auto-discovery**: Aggiungere un file nella cartella `pipelines/` lo rende automaticamente disponibile
+- **Versioning intelligente**: Supporta sia versioning basato su Edition che su DateDownload
+- **Archiviazione automatica**: I file vecchi vengono spostati nella cartella Archivio con suffisso versione
+- **Filename fissi**: I file output hanno sempre suffisso `_LATEST.xlsx` per compatibilità Tableau
+- **Logging**: Tutte le operazioni sono registrate in `pipeline_log.txt` su Google Drive
 
 ---
 
-## Project Structure
+## Architettura
 
 ```
 my-app/
-├── Dockerfile              # Container configuration
-├── main.py                 # Flask app with auto-discovery and smart upload
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
+├── Dockerfile              # Configurazione container
+├── main.py                 # Flask app con auto-discovery e smart upload
+├── requirements.txt        # Dipendenze Python
+├── README.md               # Questo file
 └── pipelines/
-    ├── __init__.py                         # Package marker
-    ├── istat_reddito_famiglie.py           # ISTAT household income (Edition-based)
-    ├── istat_reddito_famiglie_test.py      # Test pipeline
-    └── example_datedownload_pipeline.py    # Template for DateDownload pipelines
+    ├── __init__.py                    # Package marker
+    ├── istat_reddito_famiglie.py      # Reddito disponibile famiglie (Edition-based)
+    ├── nic_ecoicop.py                 # Indici prezzi ECOICOP (DateDownload-based)
+    └── nic_tipologia.py               # Indici prezzi per territorio (DateDownload-based)
+```
+
+### Flusso di esecuzione
+
+```
+Cloud Scheduler (7:00 ogni giorno)
+        ↓
+Cloud Run (/run/all)
+        ↓
+Per ogni pipeline in pipelines/:
+    1. Download dati da API ISTAT
+    2. Elaborazione e creazione Excel
+    3. Confronto versione con file esistente
+    4. Se versione diversa → Archivia vecchio + Carica nuovo
+    5. Log risultato
+        ↓
+Google Drive (DATABASE3/)
+    ├── *_LATEST.xlsx (file correnti)
+    ├── pipeline_log.txt
+    └── Archivio/ (versioni precedenti)
 ```
 
 ---
 
-## Versioning System
+## Note Metodologiche
 
-The pipeline supports two versioning modes:
+### API ISTAT e Rate Limiting
 
-### 1. Edition-based Versioning
+#### Limite di richieste
 
-Used for data sources that have official edition/release identifiers (e.g., ISTAT releases).
+L'API SDMX di ISTAT ha un **limite di 5 query al minuto per IP**. Superare questo limite comporta un **blocco dell'IP per 1-2 giorni**.
 
-**How it works:**
-- Pipeline returns `edition` value (e.g., "2025M10")
-- File is archived only when edition changes
-- Archive name: `FILE_2025M10_Edition.xlsx`
+Fonte: https://www.istat.it/classificazioni-e-strumenti/web-services-sdmx/
 
-**In pipeline code:**
+#### Strategie implementate
+
+**Strategia 1: Single Request con Empty String (CONSIGLIATA)**
+
+Utilizzando una stringa vuota `""` per una dimensione, l'API restituisce tutti i valori disponibili in una singola richiesta:
+
+```python
+# Scarica TUTTI i codici ECOICOP in una richiesta
+DATA_URL = ".../M.IT.39.4./ALL/"  # Nota: dopo "4." c'è stringa vuota
+```
+
+Vantaggi:
+- Una sola richiesta invece di decine
+- Nessun rischio di rate limiting
+- Molto più veloce (~30 secondi vs ~11 minuti)
+
+Svantaggi:
+- Download più pesante (9-10 MB di XML)
+- Non selettivo sui codici
+
+**Strategia 2: Batch con Delay (ALTERNATIVA)**
+
+Se necessario scaricare solo codici specifici, utilizzare batch con delay:
+
+```python
+BATCH_SIZE = 20  # codici per richiesta
+DELAY_BETWEEN_REQUESTS = 15  # secondi (5 query/min = 12s minimo)
+MAX_RETRIES = 3
+```
+
+Quando usare:
+- Quando servono solo alcuni codici specifici
+- Quando il download completo è troppo pesante
+- Quando i codici cambiano frequentemente
+
+### Gestione Lunghezza URL
+
+L'API ISTAT ha un **limite di circa 350 caratteri** per l'URL. Superare questo limite restituisce HTTP 400.
+
+#### Limiti testati
+
+| Dataflow | Limite codici | Note |
+|----------|---------------|------|
+| NIC ECOICOP (167_744_DF_DCSP_NIC1B2015_4) | ~40 codici | Con 1 territorio |
+| NIC Tipologia (167_744_DF_DCSP_NIC1B2015_2) | ~32 prodotti | Con 1 territorio |
+| NIC Tipologia | ~15 territori | Con 19 prodotti |
+
+#### Soluzione adottata
+
+Per evitare problemi di lunghezza URL, utilizziamo **stringhe vuote** dove possibile:
+
+```python
+# NIC ECOICOP: stringa vuota per codici prodotto
+DATA_URL = "M.IT.39.4./ALL/"  # Scarica tutti i ~715 codici
+
+# NIC Tipologia: territori espliciti + stringa vuota per prodotti
+DATA_URL = "M.IT+ITC+ITD+ITE+ITF+ITG.39.4./ALL/"  # 6 territori, tutti i prodotti
+```
+
+### Sistema di Versioning
+
+Il sistema supporta due modalità di versioning, determinate automaticamente dal valore `edition` restituito dalla pipeline.
+
+#### 1. Edition-based Versioning
+
+Per dati con identificativo di edizione ufficiale (es. release ISTAT).
+
+**Quando usare:** Dati trimestrali/annuali con edizioni ufficiali (es. Conti Nazionali)
+
+**Funzionamento:**
+- La pipeline restituisce `edition` (es. "2025M10")
+- Il file viene archiviato solo quando l'edition cambia
+- Nome archivio: `FILE_2025M10_Edition.xlsx`
+
+**Nel codice pipeline:**
 ```python
 return {
     'status': 'success',
     'buffer': buffer,
-    'filename': 'MyData_LATEST.xlsx',
-    'edition': '2025M10',  # <-- Triggers Edition-based versioning
-    ...
+    'filename': 'Reddito_disponibile_famiglie_LATEST.xlsx',
+    'edition': '2025M10',  # ← Attiva Edition-based
 }
 ```
 
-**In Excel Metadati sheet:**
+**Nel foglio Metadata dell'Excel:**
 ```
-chiave          valore
+Field           Value
 edition         2025M10
 edition_type    Edition
-download_date   2025-12-04 12:30:00
+download_date   2025-12-10 17:15:00
 ```
 
-### 2. DateDownload-based Versioning
+#### 2. DateDownload-based Versioning
 
-Used for data sources without official editions. Archives monthly based on download date.
+Per dati senza edizione ufficiale. Archivia mensilmente basandosi sulla data di download.
 
-**How it works:**
-- Pipeline returns `edition: None` or empty
-- File is archived when month changes
-- Archive name: `FILE_2025M12_DateDownload.xlsx`
+**Quando usare:** Dati mensili aggiornati frequentemente (es. Indici prezzi NIC)
 
-**In pipeline code:**
+**Funzionamento:**
+- La pipeline restituisce `edition: None` o stringa vuota
+- Il file viene archiviato quando cambia il mese
+- Nome archivio: `FILE_2025M12_DateDownload.xlsx`
+
+**Nel codice pipeline:**
 ```python
 return {
     'status': 'success',
     'buffer': buffer,
-    'filename': 'MyData_LATEST.xlsx',
-    'edition': None,  # <-- Triggers DateDownload-based versioning
-    ...
+    'filename': 'NIC_ECOICOP_LATEST.xlsx',
+    'edition': None,  # ← Attiva DateDownload-based
 }
 ```
 
-**In Excel Metadati sheet:**
+**Nel foglio Metadata dell'Excel:**
 ```
-chiave          valore
-edition         
+Field           Value
+edition         (vuoto)
 edition_type    DateDownload
-download_date   2025-12-04 12:30:00
+download_date   2025-12-10 17:17:43
 ```
 
-### Archive Naming Convention
+### Logica di Archiviazione
 
-| Versioning Type | Archive Filename |
-|-----------------|------------------|
-| Edition-based | `FILE_2025M10_Edition.xlsx` |
-| DateDownload-based | `FILE_2025M12_DateDownload.xlsx` |
-| Error/Missing metadata | `FILE_20251204_123000_ErrorNoMetadata.xlsx` |
+```
+Nuova esecuzione pipeline
+        ↓
+Esiste file _LATEST.xlsx?
+    NO → Carica nuovo file
+    SÌ → Leggi metadata dal file esistente
+            ↓
+        Edition-based?
+            SÌ → Edition diversa? → Archivia + Carica nuovo
+                 Edition uguale? → Non aggiornare
+            ↓
+        DateDownload-based?
+            SÌ → Mese diverso? → Archivia + Carica nuovo
+                 Stesso mese? → Non aggiornare (sovrascrive)
+```
+
+#### Gestione periodi temporali
+
+Per garantire che i file scarichino sempre tutti i dati disponibili:
+
+**Opzione 1: Stringhe vuote (CONSIGLIATA)**
+```python
+START_PERIOD = ""
+END_PERIOD = ""
+# L'API restituisce tutti i periodi disponibili
+```
+
+**Opzione 2: Date fisse ampie**
+```python
+START_PERIOD = "2016-01-01"
+END_PERIOD = "2030-12-31"
+# Funziona, ma richiede aggiornamento nel 2030
+```
+
+**Opzione 3: Data dinamica**
+```python
+from datetime import datetime
+END_PERIOD = datetime.now().strftime('%Y-%m-%d')
+# Sempre aggiornato, ma aggiunge complessità
+```
 
 ---
 
-## API Endpoints
+## Pipeline Disponibili
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Health check |
-| `/test` | GET | Test Google Drive connection |
-| `/pipelines` | GET | List all available pipelines |
-| `/run` | GET/POST | Run default pipeline (backward compatible) |
-| `/run/<pipeline_name>` | GET/POST | Run specific pipeline by name |
-| `/run/all` | GET/POST | Run all pipelines sequentially |
+### 1. Reddito Disponibile Famiglie (`istat_reddito_famiglie.py`)
 
-### Examples
+| Campo | Valore |
+|-------|--------|
+| **Fonte** | ISTAT - Conti economici trimestrali settori istituzionali |
+| **Dataflow** | 162_1064_DF_DCCN_ISTITUZ_QNA1_1 |
+| **Settore** | S14A (Famiglie consumatrici) |
+| **Frequenza** | Trimestrale |
+| **Versioning** | Edition-based |
+| **Output** | Reddito_disponibile_famiglie_LATEST.xlsx |
 
-```bash
-# Health check
-curl https://your-service.run.app/
+### 2. NIC ECOICOP (`nic_ecoicop.py`)
 
-# List available pipelines
-curl https://your-service.run.app/pipelines
+| Campo | Valore |
+|-------|--------|
+| **Fonte** | ISTAT - Prezzi al consumo NIC |
+| **Dataflow** | 167_744_DF_DCSP_NIC1B2015_4 |
+| **Territorio** | IT (Italia) |
+| **Classificazione** | ECOICOP 5 cifre (~715 codici) |
+| **Frequenza** | Mensile |
+| **Versioning** | DateDownload-based |
+| **Output** | NIC_ECOICOP_LATEST.xlsx |
 
-# Run specific pipeline
-curl https://your-service.run.app/run/istat_reddito_famiglie
+### 3. NIC Tipologia (`nic_tipologia.py`)
 
-# Run all pipelines
-curl https://your-service.run.app/run/all
-```
+| Campo | Valore |
+|-------|--------|
+| **Fonte** | ISTAT - Prezzi al consumo NIC |
+| **Dataflow** | 167_744_DF_DCSP_NIC1B2015_2 |
+| **Territori** | IT, ITC (Nord-ovest), ITD (Nord-est), ITE (Centro), ITF (Sud), ITG (Isole) |
+| **Classificazione** | Tipologia prodotto (38 categorie) |
+| **Frequenza** | Mensile |
+| **Versioning** | DateDownload-based |
+| **Output** | NIC_Tipologia_LATEST.xlsx |
 
 ---
 
-## Adding a New Pipeline
+## Aggiungere Nuove Pipeline
 
-### Step 1: Create pipeline file
+### Step 1: Creare il file
 
-Create `pipelines/your_pipeline_name.py`:
+Creare `pipelines/nome_pipeline.py` con la struttura:
 
 ```python
 """
-Your Pipeline Name
-==================
-Description of what this pipeline does.
+Nome Pipeline
+=============
+Descrizione della pipeline.
 
-Versioning: Edition-based OR DateDownload-based
+Versioning: Edition-based OPPURE DateDownload-based
 """
 
 import io
+import requests
 import pandas as pd
 from datetime import datetime
-from openpyxl.utils import get_column_letter
 
-OUTPUT_FILENAME = "Your_data_LATEST.xlsx"
+OUTPUT_FILENAME = "Nome_dati_LATEST.xlsx"
 
 def run_pipeline() -> dict:
     """
-    Execute the pipeline.
+    Esegue la pipeline.
     
-    Must return dict with:
-    - status: 'success' or 'error'
-    - buffer: BytesIO with Excel file (if success)
+    DEVE restituire dict con:
+    - status: 'success' o 'error'
+    - buffer: BytesIO con file Excel (se success)
     - filename: OUTPUT_FILENAME
-    - edition: Edition string OR None for DateDownload
-    - message: Error message (if error)
-    
-    Optional metadata:
-    - n_variables, n_observations, period_range, etc.
+    - edition: Stringa edition OPPURE None per DateDownload
+    - message: Messaggio errore (se error)
     """
     try:
-        # 1. Download data
-        # 2. Process data
-        # 3. Create Excel with proper Metadati sheet
-        
-        download_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 1. Download dati
+        # 2. Elaborazione
+        # 3. Creazione Excel con foglio Metadata
         
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            # Metadati - REQUIRED for versioning!
-            meta = pd.DataFrame([
-                ("edition", "2025M10"),        # Or empty for DateDownload
-                ("edition_type", "Edition"),   # Or "DateDownload"
-                ("download_date", download_date),
-                # ... other metadata
-            ], columns=["chiave", "valore"])
-            meta.to_excel(writer, sheet_name="Metadati", index=False)
+            # Foglio Metadata - OBBLIGATORIO per versioning
+            metadata = pd.DataFrame({
+                'Field': ['edition', 'edition_type', 'download_date', ...],
+                'Value': ['', 'DateDownload', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ...]
+            })
+            metadata.to_excel(writer, sheet_name="Metadata", index=False)
             
-            # Your data
-            df.to_excel(writer, sheet_name="Dati", index=False)
+            # Foglio Dati
+            df.to_excel(writer, sheet_name="Data", index=False)
         
         return {
             'status': 'success',
             'buffer': buffer,
             'filename': OUTPUT_FILENAME,
-            'edition': '2025M10',  # Or None for DateDownload
-            'n_variables': 10,
-            'n_observations': 100,
+            'edition': None,  # None per DateDownload, stringa per Edition
         }
         
     except Exception as e:
@@ -205,167 +354,164 @@ def run_pipeline() -> dict:
 ### Step 2: Deploy
 
 ```bash
-
-gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
-
-```
-
-That's it! The pipeline is automatically discovered and available at `/run/your_pipeline_name`.
-
----
-
-## Required Excel Metadati Fields
-
-For proper versioning, include these fields in the Metadati sheet:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `edition` | Yes* | Edition identifier (e.g., "2025M10"). Empty for DateDownload. |
-| `edition_type` | Yes | Either "Edition" or "DateDownload" |
-| `download_date` | Yes | Timestamp of data download |
-
-*Can be empty if edition_type is "DateDownload"
-
----
-
-## Configuration
-
-### Google Drive IDs
-
-Set via environment variables or defaults in `main.py`:
-
-```python
-DRIVE_FOLDER_ID = "0ACZ58HkBSJpjUk9PVA"           # Main folder (DATABASE3)
-ARCHIVE_FOLDER_ID = "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu"  # Archive subfolder
-```
-
-### Service Account
-
-The pipeline uses the default compute service account which must have **Content Manager** access to:
-- Main Shared Drive folder
-- Archive subfolder
-
----
-
-## Deployment Commands
-
-### Deploy or update
-
-```bash
-
-cd ~/my-app &&
-
+cd ~/my-app
 gcloud run deploy istat-pipeline \
   --source . \
   --region europe-west1 \
   --allow-unauthenticated \
-  --timeout=300 \
-  --memory=1Gi
-
+  --timeout=900 \
+  --memory=2Gi
 ```
 
-### Cloud Scheduler
+La pipeline è automaticamente disponibile su `/run/nome_pipeline`.
 
-```bash
-# Create daily job at 8:30 AM Rome time (runs all pipelines)
-gcloud scheduler jobs create http istat-daily-update \
-  --location=europe-west1 \
-  --schedule="30 8 * * *" \
-  --uri="https://istat-pipeline-953005439278.europe-west1.run.app/run/all" \
-  --http-method=GET \
-  --oidc-service-account-email=953005439278-compute@developer.gserviceaccount.com \
-  --time-zone="Europe/Rome"
+---
 
-# Test manually
-gcloud scheduler jobs run istat-daily-update --location=europe-west1
+## Configurazione Google Drive
 
-# Update existing job
-gcloud scheduler jobs update http istat-daily-update \
-  --location=europe-west1 \
-  --uri="https://istat-pipeline-953005439278.europe-west1.run.app/run/all"
+### ID Cartelle
+
+```python
+DRIVE_FOLDER_ID = "0ACZ58HkBSJpjUk9PVA"           # DATABASE3
+ARCHIVE_FOLDER_ID = "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu"  # Archivio
 ```
 
-**Note:** Google Cloud free tier includes 3 scheduler jobs. Using `/run/all` with one scheduler is recommended.
+### Permessi Service Account
+
+Il service account di Cloud Run deve avere accesso **Content Manager** a:
+- Cartella principale (DATABASE3)
+- Sottocartella Archivio
+
+Service account: `953005439278-compute@developer.gserviceaccount.com`
 
 ---
 
 ## Troubleshooting
 
-### Check logs
+### Errori comuni
+
+| Errore | Causa | Soluzione |
+|--------|-------|-----------|
+| HTTP 400 Bad Request | URL troppo lungo | Usare stringa vuota o ridurre batch size |
+| HTTP 429 Too Many Requests | Rate limit superato | Attendere 1-2 giorni, IP bloccato |
+| Timeout | Download lento | Aumentare `--timeout` nel deploy |
+| 403 Drive error | Permessi mancanti | Verificare accesso service account |
+| No DataSet found | API cambiata o dati non disponibili | Verificare URL su esploradati.istat.it |
+
+### Verificare stato API ISTAT
+
+1. Andare su https://esploradati.istat.it/
+2. Navigare al dataset desiderato
+3. Verificare che i dati siano disponibili
+4. Copiare l'URL SDMX dalla sezione "Web Services"
+
+### Log di debug
 
 ```bash
+# Ultimi 50 log
 gcloud run services logs read istat-pipeline --region=europe-west1 --limit=50
+
+# Log in tempo reale
+gcloud run services logs tail istat-pipeline --region=europe-west1
 ```
 
-### Test endpoints
+---
+
+## Comandi Utili
+
+### Deploy
 
 ```bash
+cd ~/my-app
 
-SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
-echo "=== Health ===" && curl "$SERVICE_URL/"
-echo -e "\n=== Drive ===" && curl "$SERVICE_URL/test"
-echo -e "\n=== Pipelines ===" && curl "$SERVICE_URL/pipelines"
-echo -e "\n=== Run All ===" && curl "$SERVICE_URL/run/all"
-
+gcloud run deploy istat-pipeline \
+  --source . \
+  --region europe-west1 \
+  --allow-unauthenticated \
+  --timeout=900 \
+  --memory=2Gi
 ```
 
+### Test connessione
 
 ```bash
-
 SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
-#chose whichone
 
-# Reddito famiglie (principale)
+# Health check
+curl "$SERVICE_URL/"
+
+# Test Google Drive
+curl "$SERVICE_URL/test"
+
+# Lista pipeline disponibili
+curl "$SERVICE_URL/pipelines"
+```
+
+### Esecuzione pipeline
+
+```bash
+SERVICE_URL="https://istat-pipeline-953005439278.europe-west1.run.app"
+
+# Esegui TUTTE le pipeline
+curl "$SERVICE_URL/run/all"
+
+# Esegui singola pipeline
 curl "$SERVICE_URL/run/istat_reddito_famiglie"
-
-# Reddito famiglie test (senza rettifica)
-curl "$SERVICE_URL/run/istat_reddito_famiglie_test"
-
-# Example datedownload (se lo aggiungi)
-curl "$SERVICE_URL/run/example_datedownload_pipeline"
-
+curl "$SERVICE_URL/run/nic_ecoicop"
+curl "$SERVICE_URL/run/nic_tipologia"
 ```
 
-### Common errors
+### Cloud Scheduler
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| 404 Not Found | Pipeline not found | Check filename matches endpoint name |
-| 403 Drive error | Permission issue | Verify service account has Content Manager access |
-| No edition found | API changed | Check ISTAT API availability |
-| Timeout | Slow download | Increase `--timeout` in deploy command |
+```bash
+# Visualizza job schedulati
+gcloud scheduler jobs list --location=europe-west1
 
----
+# Esegui manualmente il job schedulato
+gcloud scheduler jobs run istat-daily --location=europe-west1
 
-## File Locations
+# Elimina job
+gcloud scheduler jobs delete nome-job --location=europe-west1
 
-### Main folder (DATABASE3)
-```
-Reddito_disponibile_famiglie_LATEST.xlsx    ← Tableau connects here
-pipeline_log.txt                             ← Operation log
-```
-
-### Archive folder
-```
-Reddito_disponibile_famiglie_2025M10_Edition.xlsx
-Reddito_disponibile_famiglie_2025M09_Edition.xlsx
-OtherData_2025M11_DateDownload.xlsx
+# Crea nuovo job (esegue ogni giorno alle 7:00)
+gcloud scheduler jobs create http istat-daily \
+  --location=europe-west1 \
+  --schedule="0 7 * * *" \
+  --uri="https://istat-pipeline-953005439278.europe-west1.run.app/run/all" \
+  --http-method=GET \
+  --attempt-deadline=600s \
+  --time-zone="Europe/Rome"
 ```
 
----
+### Gestione file locali
 
-## Log Format
+```bash
+# Struttura progetto
+ls -la ~/my-app/
+ls -la ~/my-app/pipelines/
 
-```
-[2025-12-04 12:30:00] Pipeline_name: updated; version: 2025M10_Edition
-[2025-12-04 12:30:00] Pipeline_name: not_updated; version: 2025M10_Edition (unchanged)
-[2025-12-04 12:30:00] Pipeline_name: error; Error message here
+# Modifica pipeline
+nano ~/my-app/pipelines/nome_pipeline.py
+
+# Verifica sintassi Python
+python3 -m py_compile ~/my-app/pipelines/nome_pipeline.py
 ```
 
 ---
 
-## Contact
+## Riferimenti
 
-Project maintained by Paolo Refuto.
+- **ISTAT SDMX Web Services**: https://www.istat.it/classificazioni-e-strumenti/web-services-sdmx/
+- **Esplora Dati ISTAT**: https://esploradati.istat.it/
+- **Google Cloud Run**: https://cloud.google.com/run/docs
+- **Google Cloud Scheduler**: https://cloud.google.com/scheduler/docs
 
-For issues or modifications, share this README with Claude to provide context.
+---
+
+## Changelog
+
+### Dicembre 2025
+- Ottimizzazione NIC ECOICOP: da 36 batch (~11 min) a 1 richiesta (~30 sec)
+- Ottimizzazione NIC Tipologia: da 18 batch (~7 min) a 1 richiesta (~24 sec)
+- Riduzione territori NIC Tipologia: da 132 a 6 (IT + macro-aree)
+- Documentazione rate limiting ISTAT (5 query/min, blocco IP 1-2 giorni)
