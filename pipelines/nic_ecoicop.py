@@ -1,19 +1,21 @@
 # nic_ecoicop.py
-
 """
-NIC ECOICOP Pipeline
-====================
+NIC ECOICOP Pipeline (Simplified)
+=================================
 Downloads monthly consumer price indices (NIC) by ECOICOP classification (5 digits)
 from ISTAT SDMX API.
 
 Source: ISTAT - Prezzi al consumo per l'intera collettività (NIC)
 Dataflow: 167_744_DF_DCSP_NIC1B2015_4
 Territory: IT (Italy national)
-Classification: ECOICOP 5 digits
+Classification: ECOICOP 5 digits (all codes via empty string)
 
 Output: NIC_ECOICOP_LATEST.xlsx
 
 Versioning: DateDownload-based (monthly archiving)
+
+This simplified version uses empty string to download ALL ECOICOP codes
+in a single request, avoiding rate limiting issues.
 """
 
 import io
@@ -25,6 +27,7 @@ from datetime import datetime
 from collections import defaultdict
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
+import time
 
 
 # =============================================================================
@@ -35,16 +38,20 @@ OUTPUT_FILENAME = "NIC_ECOICOP_LATEST.xlsx"
 
 # API URLs
 DATAFLOW_ID = "167_744_DF_DCSP_NIC1B2015_4"
-BASE_URL = "https://esploradati.istat.it/SDMXWS/rest/data/"
 STRUCTURE_URL = f"https://esploradati.istat.it/SDMXWS/rest/dataflow/IT1/{DATAFLOW_ID}/1.0/?detail=Full&references=Descendants"
 
+# Data URL - empty string for ECOICOP codes downloads ALL codes
+DATA_URL = f"https://esploradati.istat.it/SDMXWS/rest/data/IT1,{DATAFLOW_ID},1.0/M.IT.39.4./ALL/"
+
 # Source path for metadata
-SOURCE_PATH = "PRICES / CONSUMER PRICES FOR THE WHOLE NATION / PREVIOUS BASES (NIC) / NIC MONTHLY FROM 2016 (BASE 2015) / ECOICOP CLASSIFICATION (5 DIGITS)"
-SOURCE_PATH_IT = "PREZZI / PREZZI AL CONSUMO PER L'INTERA COLLETTIVITA / BASI PRECEDENTI (NIC) / NIC MENSILI DAL 2016 (BASE 2015) / CLASSIFICAZIONE ECOICOP (5 CIFRE)"
+SOURCE_PATH = "PRICES / CONSUMER PRICES FOR THE WHOLE NATION / NIC - monthly from 2016 (base 2015) / ECOICOP CLASSIFICATION (5 DIGITS)"
+SOURCE_PATH_IT = "PREZZI / PREZZI AL CONSUMO PER L'INTERA COLLETTIVITA / Nic - mensili dal 2016 (base 2015) / CLASSIFICAZIONE ECOICOP (5 CIFRE)"
 
 # Query parameters
 START_PERIOD = "2016-01-01"
-END_PERIOD = "2030-12-31"
+END_PERIOD = ""
+
+REQUEST_TIMEOUT = 300  # seconds
 
 VERBOSE = True
 
@@ -54,66 +61,71 @@ VERBOSE = True
 # =============================================================================
 
 def log(msg):
+    """Log message with timestamp."""
     if VERBOSE:
-        print(msg)
+        print(f"[NIC_ECOICOP] {msg}")
 
 
-def fetch_codelist_names(codelist_id: str) -> dict:
+def get_hierarchy_level(code: str) -> int:
+    """Determine ECOICOP hierarchy level from code."""
+    if code in ['00', '00ST', 'OR0']:
+        return 0
+    stripped = code.lstrip('0')
+    return len(stripped) if stripped else 1
+
+
+def fetch_codelist_names() -> dict:
     """
-    Fetch code names from ISTAT structure API.
+    Fetch ECOICOP code names from ISTAT structure API.
     Returns dict: {code: name_en}
     """
-    log(f"[NIC_ECOICOP] Fetching codelist {codelist_id}...")
+    log("Fetching ECOICOP code labels from structure API...")
     
     try:
-        response = requests.get(STRUCTURE_URL, timeout=120)
+        response = requests.get(STRUCTURE_URL, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
-        
-        root = ET.fromstring(response.content)
-        
-        ns = {
-            'structure': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure',
-            'common': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common'
-        }
-        
-        names = {}
-        codelists = root.findall('.//structure:Codelist', ns)
-        
-        for cl in codelists:
-            if cl.get('id') == codelist_id:
-                codes = cl.findall('.//structure:Code', ns)
-                for code in codes:
-                    code_id = code.get('id')
-                    name_elements = code.findall('.//common:Name', ns)
-                    name_en = code_id  # fallback
-                    for n in name_elements:
-                        lang = n.get('{http://www.w3.org/XML/1998/namespace}lang')
-                        if lang == 'en':
-                            name_en = n.text
-                            break
-                        elif lang == 'it' and name_en == code_id:
-                            name_en = n.text
-                    names[code_id] = name_en
-                break
-        
-        log(f"[NIC_ECOICOP] Found {len(names)} codes in {codelist_id}")
-        return names
-        
-    except Exception as e:
-        log(f"[NIC_ECOICOP] Error fetching codelist: {e}")
+    except requests.exceptions.Timeout:
+        log("ERROR: Timeout fetching structure - ISTAT server may be slow")
         return {}
-
-
-def download_nic_data() -> tuple[pd.DataFrame, list]:
-    """
-    Download NIC ECOICOP data from ISTAT API.
-    Returns tuple of (DataFrame with data, list of periods)
-    """
-    log("[NIC_ECOICOP] Downloading data from ISTAT...")
+    except requests.exceptions.RequestException as e:
+        log(f"ERROR: Failed to fetch structure: {e}")
+        return {}
     
-    # Use empty string to get ALL available codes
-    # Format: M.IT.DATA_TYPE.MEASURE.ECOICOP
-    url = f"{BASE_URL}IT1,{DATAFLOW_ID},1.0/M.IT.39.4./ALL/"
+    try:
+        root = ET.fromstring(response.content)
+    except ET.ParseError as e:
+        log(f"ERROR: Failed to parse structure XML: {e}")
+        return {}
+    
+    names = {}
+    
+    # Find COICOP codelist
+    for cl in root.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure}Codelist'):
+        cl_id = cl.get('id', '')
+        if 'COICOP' in cl_id.upper():
+            for code in cl.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure}Code'):
+                code_id = code.get('id')
+                name_en = code_id  # fallback
+                for n in code.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common}Name'):
+                    lang = n.get('{http://www.w3.org/XML/1998/namespace}lang')
+                    if lang == 'en':
+                        name_en = n.text
+                        break
+                    elif lang == 'it' and name_en == code_id:
+                        name_en = n.text
+                names[code_id] = name_en
+    
+    log(f"Loaded {len(names)} ECOICOP code labels")
+    return names
+
+
+def download_nic_data() -> tuple:
+    """
+    Download NIC ECOICOP data from ISTAT API in a single request.
+    Returns tuple of (data: dict, periods: list, error: str or None)
+    """
+    log("Downloading data from ISTAT (single request with empty string)...")
+    log(f"URL: {DATA_URL}")
     
     params = {
         "detail": "full",
@@ -121,109 +133,171 @@ def download_nic_data() -> tuple[pd.DataFrame, list]:
         "endPeriod": END_PERIOD,
         "dimensionAtObservation": "TIME_PERIOD"
     }
-    
     headers = {"Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"}
-    
-    try:
-        log(f"[NIC_ECOICOP] URL: {url}")
-        response = requests.get(url, params=params, headers=headers, timeout=300)
-        response.raise_for_status()
-    except Exception as e:
-        log(f"[NIC_ECOICOP] Download error: {e}")
-        return None, []
-    
-    log(f"[NIC_ECOICOP] Downloaded {len(response.content) / 1024 / 1024:.1f} MB")
-    
-    # Parse XML
-    try:
-        root = ET.fromstring(response.content)
-    except ET.ParseError as e:
-        log(f"[NIC_ECOICOP] XML parse error: {e}")
-        return None, []
     
     ns = {
         'generic': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic',
         'message': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message'
     }
     
-    dataset = root.find('.//message:DataSet', ns) or root.find('.//generic:DataSet', ns) or root.find('.//DataSet')
+    try:
+        start_time = time.time()
+        response = requests.get(DATA_URL, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        download_time = time.time() - start_time
+        
+        log(f"Download completed: {len(response.content)/1024/1024:.2f} MB in {download_time:.1f}s")
+        
+        if response.status_code != 200:
+            return {}, [], f"HTTP {response.status_code}"
+            
+    except requests.exceptions.Timeout:
+        return {}, [], "Request timeout"
+    except requests.exceptions.RequestException as e:
+        return {}, [], str(e)
+    
+    # Parse XML
+    try:
+        root = ET.fromstring(response.content)
+    except ET.ParseError as e:
+        return {}, [], f"XML parse error: {e}"
+    
+    dataset = root.find('.//message:DataSet', ns)
     if dataset is None:
-        log("[NIC_ECOICOP] No DataSet found")
-        return None, []
+        return {}, [], "No DataSet found in response"
     
-    series_list = dataset.findall('.//generic:Series', ns) or dataset.findall('.//Series')
-    log(f"[NIC_ECOICOP] Found {len(series_list)} series")
+    series_list = dataset.findall('.//generic:Series', ns)
+    log(f"Found {len(series_list)} series")
     
-    if len(series_list) == 0:
-        log("[NIC_ECOICOP] No series found in DataSet")
-        return None, []
-    
-    # Extract data: {ecoicop_code: {period: value}}
+    # Extract data
     data = defaultdict(dict)
-    all_periods = set()
+    periods = set()
     
     for series in series_list:
-        series_key = series.find('.//generic:SeriesKey', ns) or series.find('.//SeriesKey')
-        ecoicop_code = None
+        series_key = series.find('.//generic:SeriesKey', ns)
+        if series_key is None:
+            continue
         
-        if series_key is not None:
-            values = series_key.findall('.//generic:Value', ns) or series_key.findall('.//Value')
-            for v in values:
-                vid = v.get('id')
-                if vid in ('E_COICOP', 'ECOICOP_2015', 'ECOICOP'):
-                    ecoicop_code = v.get('value')
-                    break
+        ecoicop_code = None
+        for v in series_key.findall('.//generic:Value', ns):
+            if v.get('id') == 'E_COICOP_REV_ISTAT':
+                ecoicop_code = v.get('value')
+                break
         
         if ecoicop_code is None:
             continue
         
-        obs_list = series.findall('.//generic:Obs', ns) or series.findall('.//Obs')
-        for obs in obs_list:
-            obs_dim = obs.find('.//generic:ObsDimension', ns) or obs.find('.//ObsDimension')
-            obs_value = obs.find('.//generic:ObsValue', ns) or obs.find('.//ObsValue')
+        for obs in series.findall('.//generic:Obs', ns):
+            obs_dim = obs.find('.//generic:ObsDimension', ns)
+            obs_value = obs.find('.//generic:ObsValue', ns)
             
             if obs_dim is not None and obs_value is not None:
-                period = obs_dim.get('value', '').replace('-', 'M')  # 2024-01 → 2024M01
-                value = obs_value.get('value')
+                period = obs_dim.get('value', '').replace('-', 'M')
                 try:
-                    data[ecoicop_code][period] = float(value)
-                    all_periods.add(period)
+                    data[ecoicop_code][period] = float(obs_value.get('value'))
+                    periods.add(period)
                 except (ValueError, TypeError):
                     pass
     
-    # Sort periods
-    sorted_periods = sorted(all_periods)
+    log(f"Extracted {len(data)} products, {len(periods)} periods")
+    return dict(data), sorted(periods), None
+
+
+def create_excel_file(data: dict, periods: list, code_names: dict, error: str = None) -> io.BytesIO:
+    """
+    Create Excel file with data and metadata sheets.
+    """
+    log("Creating Excel file...")
     
     # Create DataFrame
     rows = []
-    for code in data.keys():
-        row = {'CODE': code}
-        for period in sorted_periods:
-            row[period] = data[code].get(period, None)
+    for code in sorted(data.keys(), key=lambda x: (get_hierarchy_level(x), x)):
+        row = {
+            'CODE': code,
+            'NAME': code_names.get(code, code),
+            'LEVEL': get_hierarchy_level(code)
+        }
+        for period in periods:
+            row[period] = data[code].get(period)
         rows.append(row)
     
     df = pd.DataFrame(rows)
+    log(f"DataFrame created: {len(df)} rows x {len(df.columns)} columns")
     
-    if df.empty:
-        log("[NIC_ECOICOP] No data extracted")
-        return None, []
+    # Create Excel
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        # Data sheet
+        df.to_excel(writer, sheet_name='Data', index=False)
+        
+        # Format data sheet
+        ws = writer.sheets['Data']
+        for col_idx, col in enumerate(df.columns, 1):
+            col_letter = get_column_letter(col_idx)
+            if col in ['CODE', 'NAME']:
+                ws.column_dimensions[col_letter].width = 50 if col == 'NAME' else 12
+            elif col == 'LEVEL':
+                ws.column_dimensions[col_letter].width = 8
+            else:
+                ws.column_dimensions[col_letter].width = 10
+        
+        # Metadata sheet
+        now = datetime.now()
+        metadata = {
+            'Field': [
+                'edition',
+                'edition_type',
+                'download_date',
+                'source_path',
+                'source_path_it',
+                'dataflow_id',
+                'dataflow_url',
+                'measure',
+                'measure_code',
+                'frequency',
+                'frequency_code',
+                'base_year',
+                'territory',
+                'start_period',
+                'end_period',
+                'n_products',
+                'n_periods',
+                'errors'
+            ],
+            'Value': [
+                '',
+                'DateDownload',
+                now.strftime('%Y-%m-%d %H:%M:%S'),
+                SOURCE_PATH,
+                SOURCE_PATH_IT,
+                DATAFLOW_ID,
+                STRUCTURE_URL.split('?')[0],
+                'Index numbers',
+                '4',
+                'Monthly',
+                'M',
+                '2015',
+                'IT (Italy)',
+                periods[0] if periods else '',
+                periods[-1] if periods else '',
+                len(df),
+                len(periods),
+                error if error else 'None'
+            ]
+        }
+        meta_df = pd.DataFrame(metadata)
+        meta_df.to_excel(writer, sheet_name='Metadata', index=False)
+        
+        # Format metadata sheet
+        ws_meta = writer.sheets['Metadata']
+        ws_meta.column_dimensions['A'].width = 20
+        ws_meta.column_dimensions['B'].width = 80
+        for row in ws_meta.iter_rows(min_row=2, max_col=2):
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True)
     
-    # Sort by CODE to maintain hierarchy
-    df = df.sort_values('CODE').reset_index(drop=True)
-    
-    log(f"[NIC_ECOICOP] Extracted {len(df)} products, {len(sorted_periods)} periods")
-    
-    return df, sorted_periods
-
-
-def get_hierarchy_level(code: str) -> int:
-    """
-    Determine hierarchy level based on code length.
-    00 = level 0, 01 = level 1, 011 = level 2, etc.
-    """
-    if code in ['00', '00ST', 'OR0']:
-        return 0
-    return len(code.lstrip('0')) if code.lstrip('0') else 1
+    buffer.seek(0)
+    log("Excel file created successfully")
+    return buffer
 
 
 # =============================================================================
@@ -232,92 +306,79 @@ def get_hierarchy_level(code: str) -> int:
 
 def run_pipeline() -> dict:
     """
-    Execute the NIC ECOICOP pipeline.
+    Main pipeline function.
+    Returns dict with status, buffer, and metadata.
     """
-    log(f"[NIC_ECOICOP] Pipeline started at {datetime.now().isoformat()}")
+    log(f"Pipeline started at {datetime.now().isoformat()}")
+    start_time = time.time()
+    
+    result = {
+        'status': 'error',
+        'message': '',
+        'buffer': None,
+        'filename': OUTPUT_FILENAME,
+        'metadata': {}
+    }
     
     try:
-        # 1. Download data
-        df, periods = download_nic_data()
+        # 1. Fetch code labels
+        code_names = fetch_codelist_names()
+        if not code_names:
+            log("WARNING: Could not fetch code labels, using codes as names")
         
-        if df is None or df.empty:
-            return {'status': 'error', 'message': 'Download failed, no data received'}
+        # 2. Download data (single request)
+        data, periods, error = download_nic_data()
         
-        # 2. Fetch product names
-        product_names = fetch_codelist_names('CL_COICOP_2015')
+        if not data:
+            result['message'] = f'Download failed: {error}'
+            log(f"ERROR: {result['message']}")
+            return result
         
-        # 3. Add NAME column
-        df.insert(1, 'NAME', df['CODE'].map(lambda x: product_names.get(x, x)))
+        # 3. Create Excel file
+        buffer = create_excel_file(data, periods, code_names, error)
         
-        # 4. Add LEVEL column (hierarchy)
-        df.insert(2, 'LEVEL', df['CODE'].map(get_hierarchy_level))
+        # 4. Prepare result
+        elapsed = time.time() - start_time
         
-        # 5. Create Excel
-        log("[NIC_ECOICOP] Creating Excel file...")
-        download_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            # Metadata sheet
-            meta_rows = [
-                ("edition", ""),
-                ("edition_type", "DateDownload"),
-                ("download_date", download_date),
-                ("source_path", SOURCE_PATH),
-                ("source_path_it", SOURCE_PATH_IT),
-                ("dataflow_url", STRUCTURE_URL),
-                ("measure", "Index numbers"),
-                ("measure_code", "4"),
-                ("frequency", "Monthly"),
-                ("frequency_code", "M"),
-                ("base_year", "2015"),
-                ("territory", "IT (Italy)"),
-                ("start_period", periods[0] if periods else ""),
-                ("end_period", periods[-1] if periods else ""),
-                ("n_products", len(df)),
-                ("n_periods", len(periods)),
-            ]
-            df_meta = pd.DataFrame(meta_rows, columns=["key", "value"])
-            df_meta.to_excel(writer, sheet_name="Metadata", index=False)
-            
-            # Data sheet
-            df.to_excel(writer, sheet_name="Data", index=False)
-            
-            # Formatting
-            ws_data = writer.sheets["Data"]
-            ws_meta = writer.sheets["Metadata"]
-            
-            ws_data.column_dimensions['A'].width = 12
-            ws_data.column_dimensions['B'].width = 50
-            ws_data.column_dimensions['C'].width = 8
-            for i in range(4, len(df.columns) + 1):
-                ws_data.column_dimensions[get_column_letter(i)].width = 10
-            
-            ws_meta.column_dimensions['A'].width = 20
-            ws_meta.column_dimensions['B'].width = 80
-        
-        log(f"[NIC_ECOICOP] Pipeline completed successfully")
-        
-        return {
-            'status': 'success',
-            'buffer': buffer,
-            'filename': OUTPUT_FILENAME,
-            'edition': None,
-            'n_variables': len(df),
-            'n_observations': len(df) * len(periods),
-            'period_range': f"{periods[0]} → {periods[-1]}" if periods else None,
+        result['status'] = 'success'
+        result['message'] = f'Downloaded {len(data)} products, {len(periods)} periods in {elapsed:.1f}s'
+        result['buffer'] = buffer
+        result['metadata'] = {
+            'n_products': len(data),
+            'n_periods': len(periods),
+            'period_range': f"{periods[0]} → {periods[-1]}" if periods else '',
+            'elapsed_seconds': round(elapsed, 1)
         }
         
+        log(f"Pipeline completed successfully in {elapsed:.1f}s")
+        
     except Exception as e:
+        result['message'] = f'Pipeline error: {str(e)}'
+        log(f"ERROR: {result['message']}")
         import traceback
-        traceback.print_exc()
-        return {'status': 'error', 'message': str(e)}
+        log(traceback.format_exc())
+    
+    return result
 
 
-if __name__ == "__main__":
+# =============================================================================
+# VERSION CONTROL
+# =============================================================================
+
+def get_version_info() -> dict:
+    """Return version info for the pipeline."""
+    now = datetime.now()
+    return {
+        'version_type': 'DateDownload',
+        'version_value': now.strftime('%YM%m'),
+        'check_field': None,
+        'archive_name': f"NIC_ECOICOP_{now.strftime('%YM%m')}_DateDownload.xlsx"
+    }
+
+
+if __name__ == '__main__':
     result = run_pipeline()
     print(f"\nResult: {result['status']}")
-    if result['status'] == 'success':
-        print(f"Products: {result['n_variables']}")
-        print(f"Observations: {result['n_observations']}")
-        print(f"Period: {result['period_range']}")
+    print(f"Message: {result['message']}")
+    if result['metadata']:
+        print(f"Metadata: {result['metadata']}")

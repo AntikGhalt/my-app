@@ -205,7 +205,9 @@ def run_pipeline() -> dict:
 ### Step 2: Deploy
 
 ```bash
+
 gcloud run deploy istat-pipeline --source . --region europe-west1 --timeout=300 --memory=1Gi
+
 ```
 
 That's it! The pipeline is automatically discovered and available at `/run/your_pipeline_name`.
@@ -250,6 +252,8 @@ The pipeline uses the default compute service account which must have **Content 
 ### Deploy or update
 
 ```bash
+
+cd ~/my-app &&
 
 gcloud run deploy istat-pipeline \
   --source . \
@@ -302,6 +306,8 @@ echo "=== Health ===" && curl "$SERVICE_URL/"
 echo -e "\n=== Drive ===" && curl "$SERVICE_URL/test"
 echo -e "\n=== Pipelines ===" && curl "$SERVICE_URL/pipelines"
 echo -e "\n=== Run All ===" && curl "$SERVICE_URL/run/all"
+
+```
 
 
 ```bash
