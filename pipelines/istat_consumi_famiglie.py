@@ -43,7 +43,7 @@ DATAFLOW = "162_1064_DF_DCCN_ISTITUZ_QNA1_1"
 # Query parameters
 SECTOR = 'S14A'                     # S14A = Consumer households (Famiglie consumatrici)
 START_PERIOD = '1775-07-01'         # All available historical data
-END_PERIOD = '2030-07-01'           # Far future to get all data
+END_PERIOD = ''                     # Empty = all available data (no end limit)
 
 # Options
 USE_LATEST_EDITION = True           # Automatically find most recent edition

@@ -10,6 +10,12 @@ Versioning Logic:
 - If pipeline returns no edition → uses DateDownload-based versioning (monthly)
 - Archive naming: FILE_2025M10_Edition.xlsx or FILE_2025M11_DateDownload.xlsx
 
+Output Folders:
+- Pipelines can specify custom output folders via 'folder_id' in return dict
+- If not specified, files go to main DRIVE_FOLDER_ID
+- Log file always stays in main folder
+- Archive always stays in ARCHIVE_FOLDER_ID
+
 Author: Paolo Refuto
 Last Updated: December 2025
 """
@@ -36,6 +42,14 @@ DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "0ACZ58HkBSJpjUk9PVA")
 ARCHIVE_FOLDER_ID = os.environ.get("ARCHIVE_FOLDER_ID", "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu")
 LOG_FILENAME = "pipeline_log.txt"
 
+# Subfolder IDs (can be overridden by environment variables)
+# These are the IDs of subfolders within DATABASE3
+SUBFOLDER_IDS = {
+    'Dati_trimestrali': os.environ.get("FOLDER_DATI_TRIMESTRALI", ""),
+    'Dati_mensili': os.environ.get("FOLDER_DATI_MENSILI", ""),
+    'Dati_annuali': os.environ.get("FOLDER_DATI_ANNUALI", ""),
+}
+
 # =============================================================================
 # GOOGLE DRIVE UTILITIES
 # =============================================================================
@@ -46,6 +60,7 @@ def get_drive_service():
 
 
 def find_file_by_name(filename: str, folder_id: str) -> dict | None:
+    """Find a file by name in a specific folder."""
     service = get_drive_service()
     query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
     results = service.files().list(
@@ -100,12 +115,7 @@ def get_metadata_from_excel(file_id: str) -> dict:
 def move_file_to_archive(file_id: str, filename: str, version_suffix: str, archive_folder_id: str) -> bool:
     """
     Move a file to the archive folder with version suffix in the name.
-    
-    Args:
-        file_id: Google Drive file ID
-        filename: Current filename (e.g., "Reddito_LATEST.xlsx")
-        version_suffix: Version string (e.g., "2025M10_Edition" or "2025M11_DateDownload" or timestamp)
-        archive_folder_id: Destination folder ID
+    Archive always stays in the main ARCHIVE_FOLDER_ID regardless of source folder.
     """
     service = get_drive_service()
     try:
@@ -129,11 +139,22 @@ def move_file_to_archive(file_id: str, filename: str, version_suffix: str, archi
 
 
 def upload_excel_to_drive(buffer: io.BytesIO, filename: str, folder_id: str) -> tuple[str, str]:
+    """Upload Excel file to specified folder."""
     service = get_drive_service()
     buffer.seek(0)
-    file_metadata = {'name': filename, 'parents': [folder_id], 'driveId': folder_id, 'supportsAllDrives': True}
+    file_metadata = {
+        'name': filename, 
+        'parents': [folder_id], 
+        'driveId': DRIVE_FOLDER_ID,  # Always use main drive ID for shared drive
+        'supportsAllDrives': True
+    }
     media = MediaIoBaseUpload(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink', supportsAllDrives=True).execute()
+    file = service.files().create(
+        body=file_metadata, 
+        media_body=media, 
+        fields='id, webViewLink', 
+        supportsAllDrives=True
+    ).execute()
     return file.get('id'), file.get('webViewLink')
 
 
@@ -141,6 +162,13 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
                  folder_id: str, archive_folder_id: str) -> dict:
     """
     Smart upload with Edition or DateDownload versioning.
+    
+    Args:
+        buffer: Excel file content
+        filename: Output filename
+        edition: Edition string or None for DateDownload-based
+        folder_id: Target folder for output (can be subfolder)
+        archive_folder_id: Archive folder (always main archive)
     
     Logic:
     1. Determine version type:
@@ -163,8 +191,9 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
     new_version_suffix = f"{new_version_value}_{new_version_type}"
     
     print(f"[smart_upload] New file version: {new_version_suffix}")
+    print(f"[smart_upload] Target folder: {folder_id}")
     
-    # Check if file already exists
+    # Check if file already exists in target folder
     existing_file = find_file_by_name(filename, folder_id)
     
     if existing_file:
@@ -224,7 +253,7 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
                 'timestamp': timestamp
             }
         
-        # Archive the old file
+        # Archive the old file (always to main archive folder)
         archived = move_file_to_archive(
             file_id=existing_file['id'],
             filename=filename,
@@ -239,7 +268,7 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
                 'timestamp': timestamp
             }
     
-    # Upload new file
+    # Upload new file to target folder
     file_id, web_link = upload_excel_to_drive(buffer, filename, folder_id)
     
     return {
@@ -249,6 +278,7 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
         'filename': filename,
         'file_id': file_id,
         'web_link': web_link,
+        'folder_id': folder_id,
         'timestamp': timestamp
     }
 
@@ -256,6 +286,7 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
 def update_log(pipeline_name: str, status: str, version_info: str, details: str = "") -> bool:
     """
     Update the log file in Google Drive with pipeline result.
+    Log always stays in main DRIVE_FOLDER_ID.
     """
     service = get_drive_service()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -332,11 +363,19 @@ def run_single_pipeline(pipeline_name: str, module) -> dict:
         # Get edition (may be None for DateDownload pipelines)
         edition = result.get('edition')
         
+        # Get custom folder_id if specified, otherwise use main folder
+        output_folder_id = result.get('folder_id', DRIVE_FOLDER_ID)
+        
+        # Validate folder_id - if empty string or placeholder, use main folder
+        if not output_folder_id or output_folder_id.startswith('YOUR_'):
+            print(f"[{pipeline_name}] No valid folder_id specified, using main folder")
+            output_folder_id = DRIVE_FOLDER_ID
+        
         upload_result = smart_upload(
             buffer=result['buffer'],
             filename=result['filename'],
             edition=edition,
-            folder_id=DRIVE_FOLDER_ID,
+            folder_id=output_folder_id,
             archive_folder_id=ARCHIVE_FOLDER_ID
         )
         

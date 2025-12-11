@@ -36,6 +36,10 @@ import time
 
 OUTPUT_FILENAME = "NIC_ECOICOP_LATEST.xlsx"
 
+# Output folder ID (subfolder in DATABASE3)
+# TODO: Replace with actual Google Drive folder ID for Dati_mensili
+OUTPUT_FOLDER_ID = "1Gt7XvvNrnFgpkBEC38lwUXtckurtAK29"
+
 # API URLs
 DATAFLOW_ID = "167_744_DF_DCSP_NIC1B2015_4"
 STRUCTURE_URL = f"https://esploradati.istat.it/SDMXWS/rest/dataflow/IT1/{DATAFLOW_ID}/1.0/?detail=Full&references=Descendants"
@@ -343,6 +347,7 @@ def run_pipeline() -> dict:
         result['status'] = 'success'
         result['message'] = f'Downloaded {len(data)} products, {len(periods)} periods in {elapsed:.1f}s'
         result['buffer'] = buffer
+        result['folder_id'] = OUTPUT_FOLDER_ID
         result['metadata'] = {
             'n_products': len(data),
             'n_periods': len(periods),

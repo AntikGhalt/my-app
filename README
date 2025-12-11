@@ -430,6 +430,7 @@ gcloud run deploy istat-pipeline \
   --allow-unauthenticated \
   --timeout=900 \
   --memory=2Gi
+
 ```
 
 ### Test connessione
