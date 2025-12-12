@@ -275,6 +275,31 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
         'timestamp': timestamp
     }
 
+def get_folder_name(folder_id: str) -> str:
+    """Return the display name of a Google Drive folder given its ID.
+
+    Args:
+        folder_id: The ID of the folder in Google Drive.
+
+    Returns:
+        The name of the folder if available; otherwise the original folder_id.
+
+    This helper uses the Google Drive API to fetch the folder metadata. If the API
+    call fails (due to permission issues or invalid IDs), it gracefully falls
+    back to returning the supplied folder_id. This allows callers to always
+    include some identifier in logs without raising additional exceptions.
+    """
+    service = get_drive_service()
+    try:
+        result = service.files().get(
+            fileId=folder_id,
+            fields='name',
+            supportsAllDrives=True
+        ).execute()
+        return result.get('name', folder_id)
+    except Exception:
+        return folder_id
+
 
 def update_log(pipeline_name: str, status: str, version_info: str, details: str = "") -> bool:
     """
@@ -283,14 +308,17 @@ def update_log(pipeline_name: str, status: str, version_info: str, details: str 
     """
     service = get_drive_service()
     timestamp = datetime.now(ROME_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    
+
+    # Se viene passato un folder_id, ricaviamo il nome leggibile
+    folder_name = get_folder_name(details) if details else details
+
     if status == "updated":
-        log_line = f"[{timestamp}] {pipeline_name}: updated; version: {version_info}; folder: {details}"
+        log_line = f"[{timestamp}] {pipeline_name}: updated; version: {version_info}; folder: {folder_name}"
     elif status == "not_updated":
-        log_line = f"[{timestamp}] {pipeline_name}: not_updated; version: {version_info} (unchanged)"
+        log_line = f"[{timestamp}] {pipeline_name}: not_updated; version: {version_info} (unchanged); folder: {folder_name}"
     else:
         log_line = f"[{timestamp}] {pipeline_name}: error; {details}"
-    
+        
     try:
         existing_log = find_file_by_name(LOG_FILENAME, DRIVE_FOLDER_ID)
         

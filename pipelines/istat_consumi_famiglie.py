@@ -197,9 +197,10 @@ def download_istat_data(edition: str) -> tuple[pd.DataFrame, str]:
     params = {
         "detail": "full",
         "dimensionAtObservation": "TIME_PERIOD",
-        "startPeriod": START_PERIOD,
-        "endPeriod": END_PERIOD
+        "startPeriod": START_PERIOD
     }
+    if END_PERIOD:
+        params["endPeriod"] = END_PERIOD
     
     headers = {
         "Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"
