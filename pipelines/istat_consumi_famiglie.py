@@ -1,16 +1,29 @@
-# istat_reddito_famiglie.py
-
+# istat_consumi_famiglie.py
 """
-ISTAT Reddito Disponibile Famiglie Pipeline
-============================================
-Downloads quarterly household disposable income data from ISTAT SDMX API
+ISTAT Consumi Famiglie Pipeline
+================================
+Downloads quarterly household consumption expenditure data from ISTAT SDMX API
 and processes it into an Excel file.
 
-Source: ISTAT - Conti economici trimestrali dei settori istituzionali
-Dataflow: 162_1064_DF_DCCN_ISTITUZ_QNA1_1
-Sector: S14A (Consumer households / Famiglie consumatrici)
+Source: ISTAT - Conti economici trimestrali
+Dataflow: 163_1226_DF_DCCN_QNA1_3
+COICOP: CP01_13 (totale spesa consumi)
 
-Output: Reddito_disponibile_famiglie_LATEST.xlsx
+Dimensions:
+- Aggregato: P31_D_W0_S14 (Territorio+Estero residenti)
+             P31_D_W2_S14 (Territorio residenti+non residenti)
+- Valutazione: L_2020 (Valori concatenati 2020), V (Prezzi correnti)
+- Adjustment: N (Dati grezzi), Y (Dati destagionalizzati)
+
+Output Structure:
+- 3 Excel sheets: Metadati, Dati_Grezzi, Dati_Destagionalizzati
+- 4 data columns: 2 aggregates × 2 valuations
+- Combined column names: "Aggregato - Valutazione"
+
+Versioning: Edition-based
+
+Output: Consumi_famiglie_LATEST.xlsx
+Output Folder: Dati_trimestrali (subfolder of DATABASE3)
 """
 
 import io
@@ -20,7 +33,6 @@ import numpy as np
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from collections import defaultdict
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
 
@@ -29,67 +41,49 @@ from openpyxl.styles import Alignment
 # CONFIGURATION
 # =============================================================================
 
-# Output filename (fixed name for Tableau)
-OUTPUT_FILENAME = "Reddito_disponibile_famiglie_LATEST.xlsx"
+OUTPUT_FILENAME = "Consumi_famiglie_LATEST.xlsx"
 
-# Output folder ID (subfolder in DATABASE3)
-# TODO: Replace with actual Google Drive folder ID for Dati_trimestrali
+# IMPORTANT: Output to Dati_trimestrali subfolder
+# TODO: Replace with actual folder ID from Google Drive
 OUTPUT_FOLDER_ID = "1GoRcfLt-k3ZAg-j2S1b4k_0ADKy5eYTZ"
 
 # ISTAT API Configuration
 BASE_URL = "https://esploradati.istat.it/SDMXWS/rest/data/"
-DATAFLOW = "162_1064_DF_DCCN_ISTITUZ_QNA1_1"
+DATAFLOW = "163_1226_DF_DCCN_QNA1_3"
 
 # Query parameters
-SECTOR = 'S14A'                     # S14A = Consumer households (Famiglie consumatrici)
-START_PERIOD = '1775-07-01'         # All available historical data
-END_PERIOD = ''                     # Empty = all available data (no end limit)
+AGGREGATES = ['P31_D_W0_S14', 'P31_D_W2_S14']
+VALUATIONS = ['L_2020', 'V']
+ADJUSTMENTS = ['N', 'Y']
+COICOP_FILTER = 'CP01_13'  # totale
+
+START_PERIOD = '1775-01-01'
+END_PERIOD = ''  # Empty = all available data (no end limit)
 
 # Options
-USE_LATEST_EDITION = True           # Automatically find most recent edition
-DEFAULT_EDITION = '2025M10'         # Fallback edition
-NEGATE_IMPIEGO = True               # Make IMPIEGO series negative
-VERBOSE = False                     # Debug logging
+USE_LATEST_EDITION = True
+DEFAULT_EDITION = '2025M11'
+VERBOSE = True
 
-# Aggregates to download (1 = download, 0 = ignore)
-AGGREGATES = {
-    # CONTO DELLA ATTRIBUZIONE DEI REDDITI PRIMARI
-    'B2A3G_B_W0_X1': 1,   # RISORSA - Risultato lordo di gestione e reddito misto lordo
-    'D1_C_W0': 1,         # RISORSA - Redditi da lavoro dipendente
-    'D4T_C_W0': 1,        # RISORSA - Redditi da capitale (comprensivi quota famiglie produttrici)
-    'D4T_D_W0': 1,        # IMPIEGO - Redditi da capitale (comprensivi quota famiglie produttrici)
-    'B5G_B_W0': 1,        # SALDO - Reddito nazionale lordo/saldo dei redditi primari lordo
-    
-    # CONTO DELLA DISTRIBUZIONE SECONDARIA DEL REDDITO
-    'D61_C_W0': 1,        # RISORSA - Contributi sociali netti
-    'D62_C_W0': 1,        # RISORSA - Prestazioni sociali diverse dai trasferimenti sociali in natura
-    'D7_C_W0': 1,         # RISORSA - Altri trasferimenti correnti
-    'D5_D_W0': 1,         # IMPIEGO - Imposte correnti sul reddito, sul patrimonio, ecc.
-    'D61_D_W0': 1,        # IMPIEGO - Contributi sociali netti
-    'D62_D_W0': 1,        # IMPIEGO - Prestazioni sociali diverse dai trasferimenti sociali in natura
-    'D7_D_W0': 1,         # IMPIEGO - Altri trasferimenti correnti
-    'B6G_B_W0': 1,        # SALDO - Reddito disponibile lordo
-    
-    # CONTO DI UTILIZZAZIONE DEL REDDITO DISPONIBILE
-    'D8_C_W0': 1,         # RISORSA - Rettifica per variazione dei diritti pensionistici
+# Human-readable names
+AGGREGATE_NAMES = {
+    'P31_D_W0_S14': 'Territorio+Estero (residenti)',
+    'P31_D_W2_S14': 'Territorio (residenti+non residenti)'
 }
 
-# Descriptive names for aggregates
-AGGREGATES_NAMES = {
-    'B2A3G_B_W0_X1': 'RISORSA - Risultato lordo di gestione e reddito misto lordo',
-    'D1_C_W0': 'RISORSA - Redditi da lavoro dipendente',
-    'D4T_C_W0': 'RISORSA - Redditi da capitale (comprensivi quota famiglie produttrici)',
-    'D4T_D_W0': 'IMPIEGO - Redditi da capitale (comprensivi quota famiglie produttrici)',
-    'B5G_B_W0': 'SALDO - Reddito nazionale lordo/saldo dei redditi primari lordo',
-    'D61_C_W0': 'RISORSA - Contributi sociali netti',
-    'D62_C_W0': 'RISORSA - Prestazioni sociali diverse dai trasferimenti sociali in natura',
-    'D7_C_W0': 'RISORSA - Altri trasferimenti correnti',
-    'D5_D_W0': 'IMPIEGO - Imposte correnti sul reddito, sul patrimonio, ecc.',
-    'D61_D_W0': 'IMPIEGO - Contributi sociali netti',
-    'D62_D_W0': 'IMPIEGO - Prestazioni sociali diverse dai trasferimenti sociali in natura',
-    'D7_D_W0': 'IMPIEGO - Altri trasferimenti correnti',
-    'B6G_B_W0': 'SALDO - Reddito disponibile lordo',
-    'D8_C_W0': 'RISORSA - Rettifica per variazione dei diritti pensionistici',
+VALUATION_NAMES = {
+    'L_2020': 'Valori concatenati 2020',
+    'V': 'Prezzi correnti'
+}
+
+ADJUSTMENT_NAMES = {
+    'N': 'Dati grezzi',
+    'Y': 'Dati destagionalizzati'
+}
+
+SHEET_NAMES = {
+    'N': 'Dati_Grezzi',
+    'Y': 'Dati_Destagionalizzati'
 }
 
 
@@ -100,203 +94,168 @@ AGGREGATES_NAMES = {
 def _log(msg):
     """Print messages only if VERBOSE is True."""
     if VERBOSE:
-        print(msg)
+        print(f"[Consumi_famiglie] {msg}")
 
 
-def find_latest_edition(sector: str, aggregates_str: str, max_months_back: int = 24) -> str:
+def find_latest_edition(max_months_back: int = 24) -> str:
     """
     Find the most recent available edition by searching backwards.
-    
-    Args:
-        sector: Institutional sector code
-        aggregates_str: Plus-separated aggregate codes
-        max_months_back: How many months to search backwards
-    
-    Returns:
-        Edition string (e.g., "2025M10")
-    
-    Raises:
-        RuntimeError: If no valid edition found
     """
     start_date = datetime.now()
     
-    _log("=" * 70)
-    _log("SEARCHING FOR LATEST EDITION")
-    _log("=" * 70)
-
+    _log("Searching for latest edition...")
+    
     headers = {
         "Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"
     }
-
+    
     for i in range(max_months_back + 1):
         test_date = start_date - relativedelta(months=i)
         edition = test_date.strftime('%YM%m')
-        url = f"{BASE_URL}IT1,{DATAFLOW},1.0/Q.IT.{aggregates_str}.{sector}...V.S.N.{edition}/ALL/"
         
-        edition_year = test_date.year
-        test_year = edition_year - 1
+        # Test URL with CP01_13 filter
+        url = f"{BASE_URL}IT1,{DATAFLOW},1.0/Q.IT.{AGGREGATES[0]}...{COICOP_FILTER}.{VALUATIONS[0]}.N..{edition}/ALL/"
+        
         params = {
             "detail": "full",
             "dimensionAtObservation": "TIME_PERIOD",
-            "startPeriod": f"{test_year}-01-01",
-            "endPeriod": f"{test_year}-12-31",
+            "startPeriod": "2023-01-01",
+            "endPeriod": "2023-12-31",
         }
-
-        _log(f"Attempt {i+1}: {edition} ...")
-
+        
+        _log(f"  Testing edition: {edition}...")
+        
         try:
-            response = requests.get(url, params=params, headers=headers, timeout=30)
+            response = requests.get(url, params=params, headers=headers, timeout=60)
         except requests.RequestException as e:
-            _log(f"  Network error ({type(e).__name__}): {e}")
+            _log(f"    Network error: {e}")
             continue
-
+        
         if response.status_code != 200:
-            _log(f"  HTTP {response.status_code}")
+            _log(f"    HTTP {response.status_code}")
             continue
-
+        
         try:
             root = ET.fromstring(response.content)
         except ET.ParseError as e:
-            _log(f"  XML error: {e}")
+            _log(f"    XML error: {e}")
             continue
-
+        
         ns = {
             'msg': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message',
             'gen': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic'
         }
-
+        
         dataset = root.find('.//msg:DataSet', ns)
         if dataset is None:
             dataset = root.find('.//gen:DataSet', ns)
         if dataset is None:
-            dataset = root.find('.//DataSet')
-
-        if dataset is None:
-            _log("  DataSet not found")
+            _log("    DataSet not found")
             continue
-
+        
         series_list = dataset.findall('.//gen:Series', ns)
         if not series_list:
             series_list = dataset.findall('.//Series')
-
+        
         if series_list:
-            _log(f"  ✅ Valid edition: {edition}")
+            _log(f"  ✅ Found valid edition: {edition}")
             return edition
-
-        _log("  No series found")
-
-    raise RuntimeError(
-        f"No valid edition found in the last {max_months_back} months."
-    )
-
-
-def download_istat_data(aggregates_dict: dict, sector: str, edition: str,
-                        start_period: str = None, end_period: str = None,
-                        use_latest_edition: bool = True) -> tuple[pd.DataFrame, str]:
-    """
-    Download ISTAT data for specified aggregates and sector.
+        
+        _log("    No series found")
     
-    Args:
-        aggregates_dict: Dictionary of aggregate codes with 1/0 flags
-        sector: Institutional sector code
-        edition: Edition to use if not searching for latest
-        start_period: Start period filter
-        end_period: End period filter
-        use_latest_edition: Whether to search for latest edition
+    raise RuntimeError(f"No valid edition found in the last {max_months_back} months.")
+
+
+def download_istat_data(edition: str) -> tuple[pd.DataFrame, str]:
+    """
+    Download ISTAT consumption data.
     
     Returns:
         Tuple of (DataFrame, edition_used)
     """
-    active_aggregates = [agg for agg, flag in aggregates_dict.items() if flag == 1]
-
-    if not active_aggregates:
-        print("No aggregates selected (all flags = 0).")
-        return None, None
-
-    aggregates_str = '+'.join(active_aggregates)
-
-    # Find latest edition if requested
     effective_edition = edition
-    if use_latest_edition:
+    
+    if USE_LATEST_EDITION:
         try:
-            effective_edition = find_latest_edition(sector, aggregates_str)
+            effective_edition = find_latest_edition()
         except RuntimeError as e:
-            print(f"⚠️  Auto edition search failed: {e}")
-            print(f"   Using specified edition: {edition}")
+            _log(f"⚠️ Auto edition search failed: {e}")
+            _log(f"   Using default edition: {edition}")
             effective_edition = edition
-
+    
     _log(f"Downloading ISTAT data - dataflow {DATAFLOW}")
-    _log(f"Sector: {sector}")
-    _log(f"Active aggregates: {len(active_aggregates)}")
     _log(f"Edition: {effective_edition}")
-
-    url = f"{BASE_URL}IT1,{DATAFLOW},1.0/Q.IT.{aggregates_str}.{sector}...V.S.N.{effective_edition}/ALL/"
-
+    
+    # Build query
+    agg_str = '+'.join(AGGREGATES)
+    val_str = '+'.join(VALUATIONS)
+    adj_str = '+'.join(ADJUSTMENTS)
+    
+    url = f"{BASE_URL}IT1,{DATAFLOW},1.0/Q.IT.{agg_str}...{COICOP_FILTER}.{val_str}.{adj_str}..{effective_edition}/ALL/"
+    
     params = {
         "detail": "full",
-        "dimensionAtObservation": "TIME_PERIOD"
+        "dimensionAtObservation": "TIME_PERIOD",
+        "startPeriod": START_PERIOD,
+        "endPeriod": END_PERIOD
     }
-    if start_period:
-        params["startPeriod"] = start_period
-    if end_period:
-        params["endPeriod"] = end_period
-
+    
     headers = {
         "Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"
     }
-
+    
+    _log(f"URL: {url}")
+    
     try:
         response = requests.get(url, params=params, headers=headers, timeout=120)
         response.raise_for_status()
     except requests.RequestException as e:
-        print(f"❌ Download error: {e}")
+        _log(f"❌ Download error: {e}")
         return None, None
-
+    
     size_mb = len(response.content) / (1024 * 1024)
-    _log(f"Downloaded: {size_mb:.1f} MB")
-
+    _log(f"Downloaded: {size_mb:.2f} MB")
+    
     # Parse XML
     try:
         root = ET.fromstring(response.content)
     except ET.ParseError as e:
-        print(f"❌ XML parsing error: {e}")
+        _log(f"❌ XML parsing error: {e}")
         return None, None
-
+    
     ns = {
         'msg': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message',
         'gen': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic'
     }
-
+    
     dataset = root.find('.//msg:DataSet', ns)
     if dataset is None:
         dataset = root.find('.//gen:DataSet', ns)
+    
     if dataset is None:
-        dataset = root.find('.//DataSet')
-
-    if dataset is None:
-        print("❌ DataSet not found in XML.")
+        _log("❌ DataSet not found in XML.")
         return None, None
-
+    
     series_list = dataset.findall('.//gen:Series', ns)
     if not series_list:
         series_list = dataset.findall('.//Series')
-
+    
     if not series_list:
-        print("❌ No series found in DataSet.")
+        _log("❌ No series found in DataSet.")
         return None, None
-
+    
     _log(f"Series found: {len(series_list)}")
-
+    
     # Extract data
-    data_dict = defaultdict(list)
-
+    data_records = []
+    
     for series in series_list:
         series_attrs = {}
-
+        
         series_key = series.find('.//gen:SeriesKey', ns)
         if series_key is None:
             series_key = series.find('.//SeriesKey')
-
+        
         if series_key is not None:
             values = series_key.findall('.//gen:Value', ns)
             if not values:
@@ -306,162 +265,192 @@ def download_istat_data(aggregates_dict: dict, sector: str, edition: str,
                 dim_value = value.get('value')
                 if dim_id and dim_value:
                     series_attrs[dim_id] = dim_value
-
+        
         obs_list = series.findall('.//gen:Obs', ns)
         if not obs_list:
             obs_list = series.findall('.//Obs')
-
+        
         for obs in obs_list:
-            for key, val in series_attrs.items():
-                data_dict[key].append(val)
-
+            record = series_attrs.copy()
+            
             obs_dim = obs.find('.//gen:ObsDimension', ns)
             if obs_dim is None:
                 obs_dim = obs.find('.//ObsDimension')
             period = obs_dim.get('value', '') if obs_dim is not None else ''
-            data_dict['TIME_PERIOD'].append(period)
-
+            record['TIME_PERIOD'] = period
+            
             obs_value = obs.find('.//gen:ObsValue', ns)
             if obs_value is None:
                 obs_value = obs.find('.//ObsValue')
-
+            
             if obs_value is not None:
                 v = obs_value.get('value', None)
                 try:
-                    data_dict['VALUE'].append(float(v) if v is not None else pd.NA)
+                    record['VALUE'] = float(v) if v is not None else np.nan
                 except (TypeError, ValueError):
-                    data_dict['VALUE'].append(pd.NA)
+                    record['VALUE'] = np.nan
             else:
-                data_dict['VALUE'].append(pd.NA)
-
-    df = pd.DataFrame(data_dict)
-    df['VALUE'] = pd.to_numeric(df['VALUE'], errors='coerce')
-
+                record['VALUE'] = np.nan
+            
+            data_records.append(record)
+    
+    df = pd.DataFrame(data_records)
     _log(f"Total observations: {df.shape[0]}")
+    
     return df, effective_edition
 
 
-def extract_series(df: pd.DataFrame, aggregate_code: str, sector: str) -> pd.Series:
+def process_data(df: pd.DataFrame) -> dict:
     """
-    Extract time series for a specific aggregate and sector.
-    
-    Args:
-        df: Raw DataFrame from ISTAT
-        aggregate_code: Aggregate code to extract
-        sector: Sector code
+    Process raw data into structured format.
     
     Returns:
-        pandas Series with PeriodIndex
+        Dictionary with keys 'N' and 'Y' (adjustments), each containing a DataFrame
     """
     if df is None or df.empty:
         return None
-
-    required_cols = {'DATA_TYPE_AGGR', 'INSTITUTIONAL_SECTOR', 'TIME_PERIOD', 'VALUE'}
-    if not required_cols.issubset(df.columns):
-        print("❌ Required columns not found in DataFrame.")
-        return None
-
-    mask = (
-        (df['DATA_TYPE_AGGR'] == aggregate_code) &
-        (df['INSTITUTIONAL_SECTOR'] == sector) &
-        (df['VALUE'].notna())
-    )
-    subset = df[mask]
-    if subset.empty:
-        return None
-
-    subset = subset.sort_values('TIME_PERIOD')
-
-    try:
-        index = pd.PeriodIndex(subset['TIME_PERIOD'], freq='Q')
-    except Exception:
-        index = pd.to_datetime(subset['TIME_PERIOD'], errors='coerce')
-
-    ts = pd.Series(subset['VALUE'].values, index=index, name=aggregate_code)
-    return ts
-
-
-def classify_aggregate(code: str) -> tuple[str, str, str]:
-    """
-    Classify an aggregate code and extract clean name.
     
-    Args:
-        code: Aggregate code
+    _log("Processing data...")
     
-    Returns:
-        Tuple of (clean_name, flow_direction, raw_label)
-        flow_direction is one of: 'RISORSA', 'IMPIEGO', 'SALDO', 'AMMORTAMENTO', None
-    """
-    label = AGGREGATES_NAMES.get(code, code)
-    clean_label = label
-    flow = None
-
-    for prefix in ('RISORSA', 'IMPIEGO', 'SALDO'):
-        full_prefix = prefix + ' - '
-        if label.startswith(full_prefix):
-            clean_label = label[len(full_prefix):].strip()
-            flow = prefix
-            break
-
-    if flow is None:
-        lower = label.lower()
-        if lower.startswith('risorse') or lower.startswith('risorsa'):
-            flow = 'RISORSA'
-        elif lower.startswith('impieghi') or lower.startswith('impiego'):
-            flow = 'IMPIEGO'
-        elif lower.startswith('saldo'):
-            flow = 'SALDO'
-        elif 'ammortamenti' in lower:
-            flow = 'AMMORTAMENTO'
-
-    return clean_label, flow, label
-
-
-def build_series_metadata(codes: list) -> dict:
-    """
-    Build metadata dictionary for aggregate codes.
+    result = {}
     
-    Args:
-        codes: List of aggregate codes
+    for adj in ADJUSTMENTS:
+        _log(f"  Processing: {ADJUSTMENT_NAMES[adj]} ({adj})")
+        
+        df_adj = df[df['ADJUSTMENT'] == adj].copy()
+        
+        if df_adj.empty:
+            _log(f"    No data for adjustment {adj}")
+            continue
+        
+        records = []
+        
+        for agg in AGGREGATES:
+            for val in VALUATIONS:
+                mask = (df_adj['DATA_TYPE_AGGR'] == agg) & (df_adj['VALUATION'] == val)
+                subset = df_adj[mask]
+                
+                if subset.empty:
+                    continue
+                
+                # Create combined name: "Aggregato - Valutazione"
+                var_name = f"{AGGREGATE_NAMES.get(agg, agg)} - {VALUATION_NAMES.get(val, val)}"
+                
+                for _, row in subset.iterrows():
+                    records.append({
+                        'TIME_PERIOD': row['TIME_PERIOD'],
+                        'VARIABLE': var_name,
+                        'VALUE': row['VALUE']
+                    })
+        
+        if not records:
+            continue
+        
+        df_long = pd.DataFrame(records)
+        
+        # Handle duplicates
+        df_long = df_long.drop_duplicates(subset=['TIME_PERIOD', 'VARIABLE'], keep='first')
+        
+        # Pivot to wide format
+        df_wide = df_long.pivot(index='TIME_PERIOD', columns='VARIABLE', values='VALUE')
+        df_wide = df_wide.sort_index()
+        
+        result[adj] = df_wide
+        _log(f"    Created: {df_wide.shape[0]} rows × {df_wide.shape[1]} columns")
     
-    Returns:
-        Dictionary with metadata for each code
-    """
-    meta = {}
-    for code in codes:
-        clean_name, flow, raw_label = classify_aggregate(code)
-        meta[code] = {
-            "code": code,
-            "name": clean_name,
-            "raw_label": raw_label,
-            "flow_direction": flow
-        }
-    return meta
+    return result
 
 
-def apply_flow_signs(series_dict: dict, series_meta: dict, negate_impiego: bool = True) -> dict:
+def create_excel_file(data_dict: dict, edition: str) -> io.BytesIO:
     """
-    Make IMPIEGO series negative if requested.
-    
-    Args:
-        series_dict: Dictionary of series
-        series_meta: Metadata dictionary
-        negate_impiego: Whether to negate IMPIEGO flows
-    
-    Returns:
-        Adjusted series dictionary
+    Create Excel file with metadata and data sheets.
     """
-    if not negate_impiego:
-        return series_dict
-
-    adjusted = {}
-    for code, ts in series_dict.items():
-        info = series_meta.get(code)
-        if info and info.get("flow_direction") == "IMPIEGO":
-            adjusted[code] = -ts
-        else:
-            adjusted[code] = ts
-    return adjusted
+    _log("Creating Excel file...")
+    
+    buffer = io.BytesIO()
+    
+    # Get period range
+    period_min = None
+    period_max = None
+    for df_d in data_dict.values():
+        if df_d is not None and not df_d.empty:
+            if period_min is None:
+                period_min = df_d.index.min()
+                period_max = df_d.index.max()
+            else:
+                period_min = min(period_min, df_d.index.min())
+                period_max = max(period_max, df_d.index.max())
+    
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        
+        # Sheet 1: Metadati
+        meta_rows = [
+            ('edition', edition),
+            ('edition_type', 'Edition'),
+            ('download_date', datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            ('dataflow', DATAFLOW),
+            ('description', 'Spesa per consumi finali delle famiglie'),
+            ('coicop_filter', f'{COICOP_FILTER} (totale)'),
+            ('period_min', str(period_min)),
+            ('period_max', str(period_max)),
+            ('n_variables', len(AGGREGATES) * len(VALUATIONS)),
+        ]
+        df_meta = pd.DataFrame(meta_rows, columns=['chiave', 'valore'])
+        df_meta.to_excel(writer, sheet_name='Metadati', index=False)
+        
+        # Variable metadata
+        var_meta_rows = []
+        for agg in AGGREGATES:
+            for val in VALUATIONS:
+                var_meta_rows.append({
+                    'variable_name': f"{AGGREGATE_NAMES.get(agg, agg)} - {VALUATION_NAMES.get(val, val)}",
+                    'aggregate_code': agg,
+                    'aggregate_name': AGGREGATE_NAMES.get(agg, agg),
+                    'valuation_code': val,
+                    'valuation_name': VALUATION_NAMES.get(val, val)
+                })
+        df_var_meta = pd.DataFrame(var_meta_rows)
+        df_var_meta.to_excel(writer, sheet_name='Metadati', index=False, startrow=len(meta_rows)+3)
+        
+        # Format metadata sheet
+        ws_meta = writer.sheets['Metadati']
+        ws_meta.column_dimensions['A'].width = 20
+        ws_meta.column_dimensions['B'].width = 60
+        for col_idx in range(3, 6):
+            col_letter = get_column_letter(col_idx)
+            ws_meta.column_dimensions[col_letter].width = 40
+        
+        # Data sheets
+        for adj, sheet_name in SHEET_NAMES.items():
+            if adj not in data_dict or data_dict[adj] is None:
+                continue
+            
+            df_data = data_dict[adj].copy()
+            
+            # Add temporal columns
+            per_idx = pd.PeriodIndex(df_data.index, freq='Q')
+            df_data.insert(0, 'PERIOD', per_idx.astype(str))
+            df_data.insert(1, 'YEAR', per_idx.year)
+            df_data.insert(2, 'SEMESTER', np.where(per_idx.quarter <= 2, 'Sem1', 'Sem2'))
+            df_data.insert(3, 'QUARTER', [f'Q{q}' for q in per_idx.quarter])
+            
+            df_data.reset_index(drop=True, inplace=True)
+            df_data.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Format data sheet
+            ws = writer.sheets[sheet_name]
+            for col_idx, col_name in enumerate(df_data.columns, start=1):
+                col_letter = get_column_letter(col_idx)
+                if col_name in ('PERIOD', 'YEAR', 'SEMESTER', 'QUARTER'):
+                    ws.column_dimensions[col_letter].width = 10
+                else:
+                    ws.column_dimensions[col_letter].width = 40
+            
+            for cell in ws[1]:
+                cell.alignment = Alignment(wrap_text=True)
+    
+    _log("Excel file created successfully")
+    return buffer
 
 
 # =============================================================================
@@ -478,166 +467,53 @@ def run_pipeline() -> dict:
         - buffer: BytesIO with Excel file (if success)
         - filename: Output filename
         - edition: Data edition
-        - folder_id: Target folder for upload
+        - folder_id: Target folder ID for upload
         - metadata: Additional information
     """
-    print(f"[Reddito_disponibile_famiglie] Pipeline started at {datetime.now().isoformat()}")
+    _log(f"Pipeline started at {datetime.now().isoformat()}")
     
     try:
         # 1. Download raw data
-        print("[Reddito_disponibile_famiglie] Downloading ISTAT data...")
-        df, used_edition = download_istat_data(
-            aggregates_dict=AGGREGATES,
-            sector=SECTOR,
-            edition=DEFAULT_EDITION,
-            start_period=START_PERIOD,
-            end_period=END_PERIOD,
-            use_latest_edition=USE_LATEST_EDITION
-        )
-
+        _log("Downloading ISTAT data...")
+        df, used_edition = download_istat_data(DEFAULT_EDITION)
+        
         if df is None or df.empty:
             return {
                 'status': 'error',
                 'message': 'Download failed, no data received'
             }
-
-        print(f"[Reddito_disponibile_famiglie] Downloaded {len(df)} observations, edition: {used_edition}")
-
-        # 2. Extract series for active aggregates
-        active_aggregates = [agg for agg, flag in AGGREGATES.items() if flag == 1]
-        series_dict = {}
-
-        for agg in active_aggregates:
-            ts = extract_series(df, agg, SECTOR)
-            if ts is not None:
-                series_dict[agg] = ts
-
-        if not series_dict:
+        
+        _log(f"Downloaded {len(df)} observations, edition: {used_edition}")
+        
+        # 2. Process data
+        _log("Processing data...")
+        data_dict = process_data(df)
+        
+        if not data_dict:
             return {
                 'status': 'error',
-                'message': 'No series extracted for selected aggregates'
+                'message': 'No data extracted after processing'
             }
-
-        print(f"[Reddito_disponibile_famiglie] Extracted {len(series_dict)} series")
-
-        # 3. Build metadata
-        series_meta = build_series_metadata(series_dict.keys())
-
-        # 4. Apply negative sign to IMPIEGO
-        series_dict = apply_flow_signs(series_dict, series_meta, negate_impiego=NEGATE_IMPIEGO)
-
-        # 5. Create wide-format DataFrame
-        df_output = pd.DataFrame(series_dict)
-        df_output = df_output.sort_index()
-
-        # Period index processing
-        if isinstance(df_output.index, pd.PeriodIndex):
-            per_idx = df_output.index
-        else:
-            per_idx = df_output.index.to_period('Q')
-
-        period_min = per_idx.min()
-        period_max = per_idx.max()
-
-        period_str = per_idx.astype(str)
-        year_arr = per_idx.year
-        quarter_arr = per_idx.quarter
-        semester_arr = np.where(quarter_arr <= 2, "Sem1", "Sem2")
-        quarter_label_arr = np.array([f"Q{q}" for q in quarter_arr])
-
-        # Insert temporal columns
-        df_output.insert(0, "PERIOD", period_str)
-        df_output.insert(1, "YEAR", year_arr)
-        df_output.insert(2, "SEMESTER", semester_arr)
-        df_output.insert(3, "QUARTER", quarter_label_arr)
-
-        df_output.reset_index(drop=True, inplace=True)
-
-        # 6. Create DataFrame with clean names
-        df_output_nomi = df_output.copy()
-        meta_cols = ["PERIOD", "YEAR", "SEMESTER", "QUARTER"]
-        var_cols = [c for c in df_output.columns if c not in meta_cols]
-
-        rename_map = {code: series_meta[code]["name"] for code in var_cols}
-        df_output_nomi.rename(columns=rename_map, inplace=True)
-
-        # 7. Prepare Excel file in memory
-        print("[Reddito_disponibile_famiglie] Creating Excel file...")
         
-        # Global metadata
-        global_meta_rows = [
-            ("edition", used_edition),
-            ("edition_type", "Edition"),
-            ("download_date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            ("sector", SECTOR),
-            ("sector_description", "Famiglie consumatrici"),
-            ("dataflow", DATAFLOW),
-            ("period_min", str(period_min)),
-            ("period_max", str(period_max)),
-            ("download_date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            ("n_variables", len(var_cols)),
-        ]
-        df_global_meta = pd.DataFrame(global_meta_rows, columns=["chiave", "valore"])
-
-        # Variable metadata
-        df_vars_meta = pd.DataFrame(
-            [
-                {
-                    "code": info["code"],
-                    "name": info["name"],
-                    "raw_label": info["raw_label"],
-                    "flow_direction": info["flow_direction"],
-                }
-                for code, info in sorted(series_meta.items())
-            ]
-        )
-
-        # Write to BytesIO buffer
-        buffer = io.BytesIO()
+        # 3. Create Excel file
+        buffer = create_excel_file(data_dict, used_edition)
         
-        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            # Sheet 1: Metadati
-            df_global_meta.to_excel(writer, sheet_name="Metadati", index=False)
-            startrow = len(df_global_meta) + 2
-            df_vars_meta.to_excel(writer, sheet_name="Metadati", index=False, startrow=startrow)
-
-            # Sheet 2: Dati
-            df_output_nomi.to_excel(writer, sheet_name="Dati", index=False)
-
-            # Formatting
-            ws_data = writer.sheets["Dati"]
-            ws_meta = writer.sheets["Metadati"]
-
-            # Format Dati sheet
-            for col_idx, col_name in enumerate(df_output_nomi.columns, start=1):
-                col_letter = get_column_letter(col_idx)
-                if col_name in ("PERIOD", "YEAR", "SEMESTER", "QUARTER"):
-                    ws_data.column_dimensions[col_letter].width = 10
-                else:
-                    ws_data.column_dimensions[col_letter].width = 25
-
-            for cell in ws_data[1]:
-                cell.alignment = Alignment(wrap_text=True)
-
-            # Format Metadati sheet
-            for col_idx in range(1, 5):
-                col_letter = get_column_letter(col_idx)
-                ws_meta.column_dimensions[col_letter].width = 30
-
-        print(f"[Reddito_disponibile_famiglie] Pipeline completed successfully")
+        # Calculate stats
+        total_obs = sum(d.shape[0] for d in data_dict.values() if d is not None)
+        n_sheets = len(data_dict)
+        
+        _log(f"Pipeline completed successfully")
         
         return {
             'status': 'success',
             'buffer': buffer,
             'filename': OUTPUT_FILENAME,
             'edition': used_edition,
-            'folder_id': OUTPUT_FOLDER_ID,
-            'n_variables': len(var_cols),
-            'n_observations': len(df_output),
-            'period_range': f"{period_min} → {period_max}",
-            'sector': SECTOR
+            'folder_id': OUTPUT_FOLDER_ID,  # Custom output folder
+            'n_observations': total_obs,
+            'n_sheets': n_sheets,
         }
-
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -652,10 +528,23 @@ def run_pipeline() -> dict:
 # =============================================================================
 
 if __name__ == "__main__":
+    print("=" * 70)
+    print("ISTAT Consumi Famiglie Pipeline - Test Run")
+    print("=" * 70)
+    
     result = run_pipeline()
+    
     print(f"\nResult: {result['status']}")
+    
     if result['status'] == 'success':
         print(f"Edition: {result['edition']}")
-        print(f"Variables: {result['n_variables']}")
         print(f"Observations: {result['n_observations']}")
-        print(f"Period: {result['period_range']}")
+        print(f"Sheets: {result['n_sheets']}")
+        print(f"Target folder: {result['folder_id']}")
+        
+        # Save to file for inspection
+        with open('Consumi_famiglie_TEST.xlsx', 'wb') as f:
+            f.write(result['buffer'].getvalue())
+        print("\nSaved to: Consumi_famiglie_TEST.xlsx")
+    else:
+        print(f"Error: {result.get('message', 'Unknown error')}")

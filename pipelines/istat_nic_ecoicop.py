@@ -34,7 +34,7 @@ import time
 # CONFIGURATION
 # =============================================================================
 
-OUTPUT_FILENAME = "NIC_ECOICOP_LATEST.xlsx"
+OUTPUT_FILENAME = "ISTAT_NIC_ECOICOP_LATEST.xlsx"
 
 # Output folder ID (subfolder in DATABASE3)
 # TODO: Replace with actual Google Drive folder ID for Dati_mensili

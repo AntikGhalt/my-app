@@ -11,7 +11,7 @@ Versioning Logic:
 - Archive naming: FILE_2025M10_Edition.xlsx or FILE_2025M11_DateDownload.xlsx
 
 Output Folders:
-- Pipelines can specify custom output folders via 'folder_id' in return dict
+- Pipelines specify their output folder via 'folder_id' in return dict
 - If not specified, files go to main DRIVE_FOLDER_ID
 - Log file always stays in main folder
 - Archive always stays in ARCHIVE_FOLDER_ID
@@ -23,7 +23,7 @@ import os
 import io
 import importlib
 import pkgutil
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify
 from google.auth import default
 from googleapiclient.discovery import build
@@ -38,17 +38,10 @@ app = Flask(__name__)
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+ROME_TZ = timezone(timedelta(hours=1))  # UTC+1 (CET)
 DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "0ACZ58HkBSJpjUk9PVA")
 ARCHIVE_FOLDER_ID = os.environ.get("ARCHIVE_FOLDER_ID", "1wT0j1Hz26TW9v891LQ2ZFSpGHwQkkAmu")
 LOG_FILENAME = "pipeline_log.txt"
-
-# Subfolder IDs (can be overridden by environment variables)
-# These are the IDs of subfolders within DATABASE3
-SUBFOLDER_IDS = {
-    'Dati_trimestrali': os.environ.get("FOLDER_DATI_TRIMESTRALI", ""),
-    'Dati_mensili': os.environ.get("FOLDER_DATI_MENSILI", ""),
-    'Dati_annuali': os.environ.get("FOLDER_DATI_ANNUALI", ""),
-}
 
 # =============================================================================
 # GOOGLE DRIVE UTILITIES
@@ -181,9 +174,9 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
     
     3. Fallback: if metadata extraction fails → archive with timestamp, log error
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    current_month = datetime.now().strftime("%YM%m")  # e.g., "2025M12"
-    
+    timestamp = datetime.now(ROME_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    current_month = datetime.now(ROME_TZ).strftime("%YM%m")
+
     # Determine version type for new file
     has_edition = edition is not None and str(edition).strip() != ''
     new_version_type = 'Edition' if has_edition else 'DateDownload'
@@ -236,7 +229,7 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
             
         else:
             # No metadata found → fallback to timestamp, log error
-            fallback_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fallback_timestamp = datetime.now(ROME_TZ).strftime("%Y%m%d_%H%M%S")
             existing_version_suffix = f"{fallback_timestamp}_ErrorNoMetadata"
             should_archive = True
             print(f"[smart_upload] WARNING: No edition or download_date found in existing file!")
@@ -289,10 +282,10 @@ def update_log(pipeline_name: str, status: str, version_info: str, details: str 
     Log always stays in main DRIVE_FOLDER_ID.
     """
     service = get_drive_service()
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(ROME_TZ).strftime("%Y-%m-%d %H:%M:%S")
     
     if status == "updated":
-        log_line = f"[{timestamp}] {pipeline_name}: updated; version: {version_info}"
+        log_line = f"[{timestamp}] {pipeline_name}: updated; version: {version_info}; folder: {details}"
     elif status == "not_updated":
         log_line = f"[{timestamp}] {pipeline_name}: not_updated; version: {version_info} (unchanged)"
     else:
@@ -381,7 +374,7 @@ def run_single_pipeline(pipeline_name: str, module) -> dict:
         
         # Build version info for logging
         version_info = f"{upload_result.get('version_value', 'unknown')}_{upload_result.get('version_type', 'unknown')}"
-        update_log(pipeline_name, upload_result['status'], version_info)
+        update_log(pipeline_name, upload_result['status'], version_info, output_folder_id)
         
         # Add pipeline metadata to response
         upload_result['n_variables'] = result.get('n_variables')
@@ -407,7 +400,7 @@ def health_check():
     return jsonify({
         'status': 'healthy', 
         'service': 'istat-pipeline', 
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now(ROME_TZ).isoformat()
     })
 
 
@@ -427,13 +420,13 @@ def test_drive():
             'archive_folder_id': ARCHIVE_FOLDER_ID,
             'files_in_folder': len(files), 
             'sample_files': [f['name'] for f in files],
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now(ROME_TZ).isoformat()
         }), 200
     except Exception as e:
         return jsonify({
             'status': 'error', 
             'message': str(e), 
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now(ROME_TZ).isoformat()
         }), 500
 
 
@@ -445,7 +438,7 @@ def list_pipelines():
         'status': 'success',
         'available_pipelines': list(pipelines.keys()),
         'endpoints': [f'/run/{name}' for name in pipelines.keys()],
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now(ROME_TZ).isoformat()
     })
 
 
@@ -486,7 +479,7 @@ def run_all():
         'status': 'completed',
         'pipelines_run': len(results),
         'results': results,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now(ROME_TZ).isoformat()
     })
 
 
@@ -497,7 +490,7 @@ def handle_not_found(error):
         'status': 'error', 
         'message': 'Route not found',
         'available_routes': ['/', '/test', '/pipelines', '/run', '/run/all'] + [f'/run/{p}' for p in pipelines.keys()],
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now(ROME_TZ).isoformat()
     }), 404
 
 
