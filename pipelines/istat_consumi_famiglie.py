@@ -119,9 +119,10 @@ def find_latest_edition(max_months_back: int = 24) -> str:
         params = {
             "detail": "full",
             "dimensionAtObservation": "TIME_PERIOD",
-            "startPeriod": "2023-01-01",
-            "endPeriod": "2023-12-31",
+            "startPeriod": "2023-01-01"
         }
+        if END_PERIOD:        # aggiunge endPeriod solo se non è vuoto
+            params["endPeriod"] = END_PERIOD
         
         _log(f"  Testing edition: {edition}...")
         
