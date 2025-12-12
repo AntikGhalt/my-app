@@ -422,6 +422,11 @@ gcloud run services logs tail istat-pipeline --region=europe-west1
 ### Deploy
 
 ```bash
+gcloud config set project thinking-league-479415-t2
+
+```
+
+```bash
 cd ~/my-app
 
 gcloud run deploy istat-pipeline \

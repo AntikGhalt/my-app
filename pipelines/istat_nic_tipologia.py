@@ -1,21 +1,21 @@
-# nic_ecoicop.py
+# nic_tipologia.py
 """
-NIC ECOICOP Pipeline (Simplified)
-=================================
-Downloads monthly consumer price indices (NIC) by ECOICOP classification (5 digits)
+NIC Tipologia Pipeline (Simplified)
+====================================
+Downloads monthly consumer price indices (NIC) by product type and territory
 from ISTAT SDMX API.
 
 Source: ISTAT - Prezzi al consumo per l'intera collettività (NIC)
-Dataflow: 167_744_DF_DCSP_NIC1B2015_4
-Territory: IT (Italy national)
-Classification: ECOICOP 5 digits (all codes via empty string)
+Dataflow: 167_744_DF_DCSP_NIC1B2015_2
+Territories: IT + 5 macro-areas (IT, ITC, ITD, ITE, ITF, ITG)
+Classification: Product types (all codes via empty string)
 
-Output: NIC_ECOICOP_LATEST.xlsx
+Output: NIC_Tipologia_LATEST.xlsx
 
 Versioning: DateDownload-based (monthly archiving)
 
-This simplified version uses empty string to download ALL ECOICOP codes
-in a single request, avoiding rate limiting issues.
+This simplified version downloads only 6 territories (Italy + 5 macro-areas)
+instead of all 132 territories, reducing download from 24 MB to ~1.6 MB.
 """
 
 import io
@@ -34,22 +34,34 @@ import time
 # CONFIGURATION
 # =============================================================================
 
-OUTPUT_FILENAME = "NIC_ECOICOP_LATEST.xlsx"
+OUTPUT_FILENAME = "NIC_Tipologia_LATEST.xlsx"
 
 # Output folder ID (subfolder in DATABASE3)
 # TODO: Replace with actual Google Drive folder ID for Dati_mensili
 OUTPUT_FOLDER_ID = "1Gt7XvvNrnFgpkBEC38lwUXtckurtAK29"
 
 # API URLs
-DATAFLOW_ID = "167_744_DF_DCSP_NIC1B2015_4"
+DATAFLOW_ID = "167_744_DF_DCSP_NIC1B2015_2"
 STRUCTURE_URL = f"https://esploradati.istat.it/SDMXWS/rest/dataflow/IT1/{DATAFLOW_ID}/1.0/?detail=Full&references=Descendants"
 
-# Data URL - empty string for ECOICOP codes downloads ALL codes
-DATA_URL = f"https://esploradati.istat.it/SDMXWS/rest/data/IT1,{DATAFLOW_ID},1.0/M.IT.39.4./ALL/"
+# Data URL - 6 territories + empty string for product types
+# IT=Italia, ITC=Nord-ovest, ITD=Nord-est, ITE=Centro, ITF=Sud, ITG=Isole
+TERRITORIES = "IT+ITC+ITD+ITE+ITF+ITG"
+DATA_URL = f"https://esploradati.istat.it/SDMXWS/rest/data/IT1,{DATAFLOW_ID},1.0/M.{TERRITORIES}.39.4./ALL/"
+
+# Territory names
+TERRITORY_NAMES = {
+    'IT': 'Italia',
+    'ITC': 'Nord-ovest',
+    'ITD': 'Nord-est', 
+    'ITE': 'Centro',
+    'ITF': 'Sud',
+    'ITG': 'Isole'
+}
 
 # Source path for metadata
-SOURCE_PATH = "PRICES / CONSUMER PRICES FOR THE WHOLE NATION / NIC - monthly from 2016 (base 2015) / ECOICOP CLASSIFICATION (5 DIGITS)"
-SOURCE_PATH_IT = "PREZZI / PREZZI AL CONSUMO PER L'INTERA COLLETTIVITA / Nic - mensili dal 2016 (base 2015) / CLASSIFICAZIONE ECOICOP (5 CIFRE)"
+SOURCE_PATH = "PRICES / CONSUMER PRICES FOR THE WHOLE NATION / NIC - monthly from 2016 (base 2015) / PRODUCT TYPE"
+SOURCE_PATH_IT = "PREZZI / PREZZI AL CONSUMO PER L'INTERA COLLETTIVITA / Nic - mensili dal 2016 (base 2015) / TIPOLOGIA DI PRODOTTO"
 
 # Query parameters
 START_PERIOD = "2016-01-01"
@@ -67,23 +79,15 @@ VERBOSE = True
 def log(msg):
     """Log message with timestamp."""
     if VERBOSE:
-        print(f"[NIC_ECOICOP] {msg}")
-
-
-def get_hierarchy_level(code: str) -> int:
-    """Determine ECOICOP hierarchy level from code."""
-    if code in ['00', '00ST', 'OR0']:
-        return 0
-    stripped = code.lstrip('0')
-    return len(stripped) if stripped else 1
+        print(f"[NIC_Tipologia] {msg}")
 
 
 def fetch_codelist_names() -> dict:
     """
-    Fetch ECOICOP code names from ISTAT structure API.
+    Fetch product type code names from ISTAT structure API.
     Returns dict: {code: name_en}
     """
-    log("Fetching ECOICOP code labels from structure API...")
+    log("Fetching product type labels from structure API...")
     
     try:
         response = requests.get(STRUCTURE_URL, timeout=REQUEST_TIMEOUT)
@@ -101,9 +105,9 @@ def fetch_codelist_names() -> dict:
         log(f"ERROR: Failed to parse structure XML: {e}")
         return {}
     
-    names = {}
+    product_names = {}
     
-    # Find COICOP codelist
+    # Find COICOP codelist for product types
     for cl in root.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure}Codelist'):
         cl_id = cl.get('id', '')
         if 'COICOP' in cl_id.upper():
@@ -117,26 +121,28 @@ def fetch_codelist_names() -> dict:
                         break
                     elif lang == 'it' and name_en == code_id:
                         name_en = n.text
-                names[code_id] = name_en
+                product_names[code_id] = name_en
     
-    log(f"Loaded {len(names)} ECOICOP code labels")
-    return names
+    log(f"Loaded {len(product_names)} product type labels")
+    return product_names
 
 
 def download_nic_data() -> tuple:
     """
-    Download NIC ECOICOP data from ISTAT API in a single request.
+    Download NIC Tipologia data from ISTAT API in a single request.
     Returns tuple of (data: dict, periods: list, error: str or None)
     """
-    log("Downloading data from ISTAT (single request with empty string)...")
+    log("Downloading data from ISTAT (single request)...")
     log(f"URL: {DATA_URL}")
+    log(f"Territories: {TERRITORIES}")
     
     params = {
         "detail": "full",
         "startPeriod": START_PERIOD,
-        "endPeriod": END_PERIOD,
         "dimensionAtObservation": "TIME_PERIOD"
     }
+    if END_PERIOD:  # Only add endPeriod if not empty
+        params["endPeriod"] = END_PERIOD
     headers = {"Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"}
     
     ns = {
@@ -172,22 +178,29 @@ def download_nic_data() -> tuple:
     series_list = dataset.findall('.//generic:Series', ns)
     log(f"Found {len(series_list)} series")
     
-    # Extract data
+    # Extract data: {(territory, product): {period: value}}
     data = defaultdict(dict)
     periods = set()
+    territories_found = set()
+    products_found = set()
     
     for series in series_list:
         series_key = series.find('.//generic:SeriesKey', ns)
         if series_key is None:
             continue
         
-        ecoicop_code = None
+        territory = None
+        product = None
         for v in series_key.findall('.//generic:Value', ns):
-            if v.get('id') == 'E_COICOP_REV_ISTAT':
-                ecoicop_code = v.get('value')
-                break
+            vid = v.get('id')
+            if vid == 'REF_AREA':
+                territory = v.get('value')
+                territories_found.add(territory)
+            elif vid == 'E_COICOP_REV_ISTAT':
+                product = v.get('value')
+                products_found.add(product)
         
-        if ecoicop_code is None:
+        if territory is None or product is None:
             continue
         
         for obs in series.findall('.//generic:Obs', ns):
@@ -197,16 +210,16 @@ def download_nic_data() -> tuple:
             if obs_dim is not None and obs_value is not None:
                 period = obs_dim.get('value', '').replace('-', 'M')
                 try:
-                    data[ecoicop_code][period] = float(obs_value.get('value'))
+                    data[(territory, product)][period] = float(obs_value.get('value'))
                     periods.add(period)
                 except (ValueError, TypeError):
                     pass
     
-    log(f"Extracted {len(data)} products, {len(periods)} periods")
+    log(f"Extracted {len(territories_found)} territories, {len(products_found)} products, {len(data)} combinations")
     return dict(data), sorted(periods), None
 
 
-def create_excel_file(data: dict, periods: list, code_names: dict, error: str = None) -> io.BytesIO:
+def create_excel_file(data: dict, periods: list, product_names: dict, error: str = None) -> io.BytesIO:
     """
     Create Excel file with data and metadata sheets.
     """
@@ -214,18 +227,23 @@ def create_excel_file(data: dict, periods: list, code_names: dict, error: str = 
     
     # Create DataFrame
     rows = []
-    for code in sorted(data.keys(), key=lambda x: (get_hierarchy_level(x), x)):
+    for (territory, product) in sorted(data.keys()):
         row = {
-            'CODE': code,
-            'NAME': code_names.get(code, code),
-            'LEVEL': get_hierarchy_level(code)
+            'TERRITORY': territory,
+            'TERRITORY_NAME': TERRITORY_NAMES.get(territory, territory),
+            'PRODUCT_TYPE': product,
+            'PRODUCT_NAME': product_names.get(product, product),
         }
         for period in periods:
-            row[period] = data[code].get(period)
+            row[period] = data[(territory, product)].get(period)
         rows.append(row)
     
     df = pd.DataFrame(rows)
     log(f"DataFrame created: {len(df)} rows x {len(df.columns)} columns")
+    
+    # Get unique counts
+    n_territories = df['TERRITORY'].nunique() if len(df) > 0 else 0
+    n_products = df['PRODUCT_TYPE'].nunique() if len(df) > 0 else 0
     
     # Create Excel
     buffer = io.BytesIO()
@@ -237,10 +255,10 @@ def create_excel_file(data: dict, periods: list, code_names: dict, error: str = 
         ws = writer.sheets['Data']
         for col_idx, col in enumerate(df.columns, 1):
             col_letter = get_column_letter(col_idx)
-            if col in ['CODE', 'NAME']:
-                ws.column_dimensions[col_letter].width = 50 if col == 'NAME' else 12
-            elif col == 'LEVEL':
-                ws.column_dimensions[col_letter].width = 8
+            if col in ['TERRITORY', 'PRODUCT_TYPE']:
+                ws.column_dimensions[col_letter].width = 15
+            elif col in ['TERRITORY_NAME', 'PRODUCT_NAME']:
+                ws.column_dimensions[col_letter].width = 50
             else:
                 ws.column_dimensions[col_letter].width = 10
         
@@ -260,10 +278,12 @@ def create_excel_file(data: dict, periods: list, code_names: dict, error: str = 
                 'frequency',
                 'frequency_code',
                 'base_year',
-                'territory',
+                'territories',
                 'start_period',
                 'end_period',
-                'n_products',
+                'n_territories',
+                'n_product_types',
+                'n_combinations',
                 'n_periods',
                 'errors'
             ],
@@ -280,9 +300,11 @@ def create_excel_file(data: dict, periods: list, code_names: dict, error: str = 
                 'Monthly',
                 'M',
                 '2015',
-                'IT (Italy)',
+                'IT (Italia), ITC (Nord-ovest), ITD (Nord-est), ITE (Centro), ITF (Sud), ITG (Isole)',
                 periods[0] if periods else '',
                 periods[-1] if periods else '',
+                n_territories,
+                n_products,
                 len(df),
                 len(periods),
                 error if error else 'None'
@@ -294,7 +316,7 @@ def create_excel_file(data: dict, periods: list, code_names: dict, error: str = 
         # Format metadata sheet
         ws_meta = writer.sheets['Metadata']
         ws_meta.column_dimensions['A'].width = 20
-        ws_meta.column_dimensions['B'].width = 80
+        ws_meta.column_dimensions['B'].width = 100
         for row in ws_meta.iter_rows(min_row=2, max_col=2):
             for cell in row:
                 cell.alignment = Alignment(wrap_text=True)
@@ -326,9 +348,9 @@ def run_pipeline() -> dict:
     
     try:
         # 1. Fetch code labels
-        code_names = fetch_codelist_names()
-        if not code_names:
-            log("WARNING: Could not fetch code labels, using codes as names")
+        product_names = fetch_codelist_names()
+        if not product_names:
+            log("WARNING: Could not fetch product labels, using codes as names")
         
         # 2. Download data (single request)
         data, periods, error = download_nic_data()
@@ -339,17 +361,23 @@ def run_pipeline() -> dict:
             return result
         
         # 3. Create Excel file
-        buffer = create_excel_file(data, periods, code_names, error)
+        buffer = create_excel_file(data, periods, product_names, error)
         
-        # 4. Prepare result
+        # 4. Get unique counts
+        territories = set(t for t, p in data.keys())
+        products = set(p for t, p in data.keys())
+        
+        # 5. Prepare result
         elapsed = time.time() - start_time
         
         result['status'] = 'success'
-        result['message'] = f'Downloaded {len(data)} products, {len(periods)} periods in {elapsed:.1f}s'
+        result['message'] = f'Downloaded {len(territories)} territories, {len(products)} products, {len(data)} combinations in {elapsed:.1f}s'
         result['buffer'] = buffer
         result['folder_id'] = OUTPUT_FOLDER_ID
         result['metadata'] = {
-            'n_products': len(data),
+            'n_territories': len(territories),
+            'n_products': len(products),
+            'n_combinations': len(data),
             'n_periods': len(periods),
             'period_range': f"{periods[0]} → {periods[-1]}" if periods else '',
             'elapsed_seconds': round(elapsed, 1)
@@ -377,7 +405,7 @@ def get_version_info() -> dict:
         'version_type': 'DateDownload',
         'version_value': now.strftime('%YM%m'),
         'check_field': None,
-        'archive_name': f"NIC_ECOICOP_{now.strftime('%YM%m')}_DateDownload.xlsx"
+        'archive_name': f"NIC_Tipologia_{now.strftime('%YM%m')}_DateDownload.xlsx"
     }
 
 
