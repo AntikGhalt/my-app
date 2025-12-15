@@ -41,7 +41,7 @@ from openpyxl.styles import Alignment
 # CONFIGURATION
 # =============================================================================
 
-OUTPUT_FILENAME = "Consumi_famiglie_LATEST.xlsx"
+OUTPUT_FILENAME = "ISTAT_Consumi_famiglie_LATEST.xlsx"
 
 # IMPORTANT: Output to Dati_trimestrali subfolder
 # TODO: Replace with actual folder ID from Google Drive
@@ -67,8 +67,8 @@ VERBOSE = True
 
 # Human-readable names
 AGGREGATE_NAMES = {
-    'P31_D_W0_S14': 'Territorio+Estero (residenti)',
-    'P31_D_W2_S14': 'Territorio (residenti+non residenti)'
+    'P31_D_W0_S14': 'Spesa residenti (Territorio+Estero) ',
+    'P31_D_W2_S14': 'Spesa sul territorio (residenti + non residenti)'
 }
 
 VALUATION_NAMES = {

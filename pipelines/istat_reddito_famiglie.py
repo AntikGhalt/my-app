@@ -30,7 +30,7 @@ from openpyxl.styles import Alignment
 # =============================================================================
 
 # Output filename (fixed name for Tableau)
-OUTPUT_FILENAME = "Reddito_disponibile_famiglie_LATEST.xlsx"
+OUTPUT_FILENAME = "ISTAT_Reddito_disponibile_famiglie_LATEST.xlsx"
 
 # Output folder ID (subfolder in DATABASE3)
 # TODO: Replace with actual Google Drive folder ID for Dati_trimestrali
