@@ -84,47 +84,44 @@ def log(msg):
 
 def fetch_codelist_names() -> dict:
     """
-    Fetch product type code names from ISTAT structure API.
-    Returns dict: {code: name_en}
+    Recupera i nomi dei codici (ECOICOP o tipologia) dalla struttura SDMX,
+    preferendo l’italiano e usando l’inglese solo in assenza della traduzione italiana.
+    In caso di errore restituisce un dizionario vuoto, così il resto della pipeline
+    funziona usando il codice come nome.
     """
-    log("Fetching product type labels from structure API...")
-    
     try:
         response = requests.get(STRUCTURE_URL, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
-    except requests.exceptions.Timeout:
-        log("ERROR: Timeout fetching structure - ISTAT server may be slow")
+    except requests.RequestException:
+        log("ERROR: Impossibile recuperare la struttura SDMX.")
         return {}
-    except requests.exceptions.RequestException as e:
-        log(f"ERROR: Failed to fetch structure: {e}")
-        return {}
-    
+
     try:
         root = ET.fromstring(response.content)
-    except ET.ParseError as e:
-        log(f"ERROR: Failed to parse structure XML: {e}")
+    except ET.ParseError:
+        log("ERROR: XML della struttura non valido.")
         return {}
-    
-    product_names = {}
-    
-    # Find COICOP codelist for product types
+
+    names = {}
+    # trova la codelist corretta (contiene COICOP)
     for cl in root.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure}Codelist'):
-        cl_id = cl.get('id', '')
-        if 'COICOP' in cl_id.upper():
+        if 'COICOP' in (cl.get('id') or '').upper():
             for code in cl.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure}Code'):
                 code_id = code.get('id')
-                name_en = code_id  # fallback
+                label = code_id  # fallback
                 for n in code.findall('.//{http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common}Name'):
                     lang = n.get('{http://www.w3.org/XML/1998/namespace}lang')
-                    if lang == 'en':
-                        name_en = n.text
+                    if lang == 'it':
+                        label = n.text
                         break
-                    elif lang == 'it' and name_en == code_id:
-                        name_en = n.text
-                product_names[code_id] = name_en
-    
-    log(f"Loaded {len(product_names)} product type labels")
-    return product_names
+                    # usa l’inglese solo se non è già stata impostata un’etichetta
+                    elif lang == 'en' and label == code_id:
+                        label = n.text
+                names[code_id] = label
+            break
+
+    log(f"Loaded {len(names)} code labels (Italian preferred)")
+    return names
 
 
 def download_nic_data() -> tuple:
