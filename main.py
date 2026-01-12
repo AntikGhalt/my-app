@@ -175,7 +175,8 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
     3. Fallback: if metadata extraction fails → archive with timestamp, log error
     """
     timestamp = datetime.now(ROME_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    current_month = datetime.now(ROME_TZ).strftime("%YM%m")
+    _now = datetime.now(ROME_TZ)
+    current_month = f"{_now.year}M{_now.month}"
 
     # Determine version type for new file
     has_edition = edition is not None and str(edition).strip() != ''
@@ -211,7 +212,7 @@ def smart_upload(buffer: io.BytesIO, filename: str, edition: str | None,
                 try:
                     # Parse download_date and extract YYYYMM
                     dt = pd.to_datetime(existing_download_date)
-                    existing_month = dt.strftime("%YM%m")
+                    existing_month = f"{dt.year}M{dt.month}"
                     existing_version_suffix = f"{existing_month}_DateDownload"
                     # Archive only if month changed
                     should_archive = (existing_month != current_month)

@@ -130,7 +130,7 @@ def find_latest_edition(sector: str, aggregates_str: str, max_months_back: int =
 
     for i in range(max_months_back + 1):
         test_date = start_date - relativedelta(months=i)
-        edition = test_date.strftime('%YM%m')
+        edition = f"{test_date.year}M{test_date.month}"
         url = f"{BASE_URL}IT1,{DATAFLOW},1.0/Q.IT.{aggregates_str}.{sector}...V.S.N.{edition}/ALL/"
         
         edition_year = test_date.year

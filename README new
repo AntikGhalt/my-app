@@ -191,6 +191,9 @@ edition_type    Edition
 download_date   2025-12-10 17:15:00
 ```
 
+**Nota sul formato:** Il mese nell'edition non ha lo zero iniziale 
+(es. `2026M1` per gennaio, non `2026M01`)
+
 #### 2. DateDownload-based Versioning
 
 Per dati senza edizione ufficiale. Archivia mensilmente basandosi sulla data di download.
@@ -473,8 +476,8 @@ curl "$SERVICE_URL/"
 # Test Google Drive
 curl "$SERVICE_URL/test"
 
-# Lista pipeline disponibili
-curl "$SERVICE_URL/pipelines"
+# Esegui TUTTE le pipeline
+curl "$SERVICE_URL/run/all"
 ```
 
 ### Esecuzione pipeline

@@ -111,7 +111,7 @@ def find_latest_edition(max_months_back: int = 24) -> str:
     
     for i in range(max_months_back + 1):
         test_date = start_date - relativedelta(months=i)
-        edition = test_date.strftime('%YM%m')
+        edition = f"{test_date.year}M{test_date.month}"
         
         # Test URL with CP01_13 filter
         url = f"{BASE_URL}IT1,{DATAFLOW},1.0/Q.IT.{AGGREGATES[0]}...{COICOP_FILTER}.{VALUATIONS[0]}.N..{edition}/ALL/"

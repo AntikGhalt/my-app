@@ -374,9 +374,9 @@ def get_version_info() -> dict:
     now = datetime.now()
     return {
         'version_type': 'DateDownload',
-        'version_value': now.strftime('%YM%m'),
+        'version_value': f"{now.year}M{now.month}",
         'check_field': None,
-        'archive_name': f"NIC_ECOICOP_{now.strftime('%YM%m')}_DateDownload.xlsx"
+        'archive_name': f"NIC_ECOICOP_{now.year}M{now.month}_DateDownload.xlsx"
     }
 
 
