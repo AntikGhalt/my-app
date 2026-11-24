@@ -282,20 +282,35 @@ scaricano come zip dalla pagina del run e restano 30 giorni. Il `manifest.json`
 passa da un'esecuzione all'altra nella cache di GitHub, quindi i dataset non
 cambiati non vengono riscaricati.
 
-**Su Google Drive**, servono:
+**Su Google Drive**, senza chiavi da conservare (Workload Identity Federation:
+GitHub si presenta a Google con un token che dura pochi minuti):
 
-1. un **Drive condiviso** (non "Il mio Drive": un service account non ha
-   spazio proprio e non può creare file nelle cartelle personali);
-2. un service account in un progetto Google Cloud qualsiasi, con la Drive API
-   abilitata. Né la Drive API né il service account richiedono la
-   fatturazione;
-3. il service account aggiunto al Drive condiviso come *Gestore contenuti*;
-4. su GitHub, *Settings → Secrets and variables → Actions*:
-   * secret `GDRIVE_SERVICE_ACCOUNT`: il contenuto del file JSON della chiave;
-   * variabile `DRIVE_FOLDER_ID`: l'id della cartella (l'ultima parte
-     dell'URL).
+1. apri [Cloud Shell](https://shell.cloud.google.com) (gratuito) su un progetto
+   Google Cloud qualsiasi, anche senza fatturazione, e lancia
 
-Se uno dei due manca il workflow torna da solo alla modalità artifact.
+   ```bash
+   curl -sO https://raw.githubusercontent.com/AntikGhalt/my-app/main/scripts/setup_google_drive.sh
+   bash setup_google_drive.sh <id-progetto>
+   ```
+
+   (con il repository privato il link non funziona: copia
+   `scripts/setup_google_drive.sh` nell'editor di Cloud Shell). Lo script abilita le API (Drive, IAM: tutte gratuite), crea il service
+   account `istatsync-drive` e lo autorizza solo per questo repository. Si può
+   rilanciare senza danni;
+2. aggiungi il service account che lo script stampa al **Drive condiviso** come
+   *Gestore contenuti*. Deve essere un Drive condiviso, non "Il mio Drive": un
+   service account non ha spazio proprio e non può creare file nelle cartelle
+   personali;
+3. su GitHub, *Settings → Secrets and variables → Actions → Variables*, crea le
+   tre variabili che lo script stampa: `GCP_WORKLOAD_IDENTITY_PROVIDER`,
+   `GCP_SERVICE_ACCOUNT`, `DRIVE_FOLDER_ID` (l'ultima parte dell'URL della
+   cartella).
+
+In alternativa funziona anche una chiave JSON del service account nel secret
+`GDRIVE_SERVICE_ACCOUNT` (al posto delle prime due variabili), se la policy
+dell'organizzazione permette di crearla.
+
+Se manca qualcosa il workflow torna da solo alla modalità artifact.
 
 Su Drive i file esistenti vengono aggiornati sul posto, quindi mantengono lo
 stesso id e lo stesso link, e le connessioni di Tableau restano valide. Le
