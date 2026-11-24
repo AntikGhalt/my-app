@@ -96,6 +96,13 @@ notes = "Conti finanziari della Banca d'Italia (tavola TFAT0012), letti dal data
 # ---------------------------------------------------------------------------
 
 [[dataset]]
+id = "pil_componenti_annuali"
+title = "PIL e principali componenti, compresi i consumi delle famiglie residenti (annuale)"
+dataflow = "92_506_DF_DCCN_PILN_1"
+frequency = "A"
+notes = "Serve per i consumi delle famiglie residenti (P31_D_W0_S14) a prezzi correnti e concatenati: il dataset COICOP annuale ha solo i consumi sul territorio."
+
+[[dataset]]
 id = "ula_annuali"
 title = "Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (annuale)"
 dataflow = "92_507_DF_DCCN_OCCNSEC2010_1"
