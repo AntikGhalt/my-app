@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Trimmed copy of an ISTAT structure response (dataflow + DSD + codelists). -->
+<message:Structure xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message"
+                   xmlns:structure="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure"
+                   xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common"
+                   xmlns:xml="http://www.w3.org/XML/1998/namespace">
+  <message:Structures>
+    <structure:Dataflows>
+      <structure:Dataflow id="TEST_FLOW" agencyID="IT1" version="1.0">
+        <common:Name xml:lang="en">Final consumption expenditure of households</common:Name>
+        <common:Name xml:lang="it">Spesa per i consumi finali delle famiglie</common:Name>
+      </structure:Dataflow>
+    </structure:Dataflows>
+    <structure:Codelists>
+      <structure:Codelist id="CL_FREQ" agencyID="IT1" version="1.0">
+        <structure:Code id="Q"><common:Name xml:lang="it">trimestrale</common:Name></structure:Code>
+      </structure:Codelist>
+      <structure:Codelist id="CL_AGGR" agencyID="IT1" version="1.0">
+        <structure:Code id="P31_D_W0_S14">
+          <common:Name xml:lang="en">Resident households</common:Name>
+          <common:Name xml:lang="it">Spesa delle famiglie residenti</common:Name>
+        </structure:Code>
+        <structure:Code id="D5_D_W0">
+          <common:Name xml:lang="en">Current taxes</common:Name>
+        </structure:Code>
+      </structure:Codelist>
+      <structure:Codelist id="CL_ADJ" agencyID="IT1" version="1.0">
+        <structure:Code id="N"><common:Name xml:lang="it">dati grezzi</common:Name></structure:Code>
+        <structure:Code id="Y"><common:Name xml:lang="it">dati destagionalizzati</common:Name></structure:Code>
+      </structure:Codelist>
+    </structure:Codelists>
+    <structure:DataStructures>
+      <structure:DataStructure id="DSD_TEST" agencyID="IT1" version="1.0">
+        <structure:DataStructureComponents>
+          <structure:DimensionList id="DimensionDescriptor">
+            <structure:Dimension id="ADJUSTMENT" position="3">
+              <structure:LocalRepresentation><structure:Enumeration><Ref id="CL_ADJ" /></structure:Enumeration></structure:LocalRepresentation>
+            </structure:Dimension>
+            <structure:Dimension id="FREQ" position="1">
+              <structure:LocalRepresentation><structure:Enumeration><Ref id="CL_FREQ" /></structure:Enumeration></structure:LocalRepresentation>
+            </structure:Dimension>
+            <structure:Dimension id="DATA_TYPE_AGGR" position="2">
+              <structure:LocalRepresentation><structure:Enumeration><Ref id="CL_AGGR" /></structure:Enumeration></structure:LocalRepresentation>
+            </structure:Dimension>
+            <structure:Dimension id="EDITION" position="4" />
+            <structure:TimeDimension id="TIME_PERIOD" position="5" />
+          </structure:DimensionList>
+        </structure:DataStructureComponents>
+      </structure:DataStructure>
+    </structure:DataStructures>
+  </message:Structures>
+</message:Structure>

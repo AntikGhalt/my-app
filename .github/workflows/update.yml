@@ -1,0 +1,102 @@
+name: aggiornamento dati
+
+# Daily check for new ISTAT / Banca d'Italia releases. Runs on GitHub's free
+# runners, so it costs nothing on Google Cloud.
+#
+# With the GDRIVE_SERVICE_ACCOUNT secret and the DRIVE_FOLDER_ID variable set,
+# files go to Google Drive. Without them they are published as a workflow
+# artifact, and the manifest is carried between runs in the Actions cache.
+
+on:
+  schedule:
+    # 06:23 UTC = 07:23 in winter, 08:23 in summer (Rome), Monday to Friday.
+    - cron: "23 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      datasets:
+        description: "Dataset da scaricare, separati da spazi (vuoto = tutti quelli attivi)"
+        required: false
+        default: ""
+      force:
+        description: "Ripubblica anche se i dati non sono cambiati"
+        type: boolean
+        default: false
+
+# Never two runs at once from the same IP: ISTAT bans after 5 requests/minute.
+concurrency:
+  group: istatsync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ISTATSYNC_OUTPUT_DIR: data
+      ISTATSYNC_DRIVE_FOLDER_ID: ${{ vars.DRIVE_FOLDER_ID }}
+      HAS_DRIVE_KEY: ${{ secrets.GDRIVE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install ".[drive]"
+
+      - name: Credenziali Google Drive
+        if: env.HAS_DRIVE_KEY == 'true' && env.ISTATSYNC_DRIVE_FOLDER_ID != ''
+        env:
+          KEY: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$KEY" > "$RUNNER_TEMP/gdrive.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gdrive.json" >> "$GITHUB_ENV"
+          echo "PUBLISH=drive" >> "$GITHUB_ENV"
+
+      - name: Senza Drive, pubblica come artifact
+        if: env.PUBLISH != 'drive'
+        run: |
+          echo "ISTATSYNC_DRIVE_FOLDER_ID=" >> "$GITHUB_ENV"
+          echo "PUBLISH=artifact" >> "$GITHUB_ENV"
+
+      # Local mode only: bring back manifest and structure cache from the last
+      # run, so unchanged datasets are not downloaded again.
+      - name: Stato dell'ultima esecuzione
+        if: env.PUBLISH == 'artifact'
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: istatsync-data-${{ github.run_id }}
+          restore-keys: istatsync-data-
+
+      - name: Scarica e pubblica
+        env:
+          DATASETS: ${{ inputs.datasets }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          read -r -a ids <<< "$DATASETS"
+          args=()
+          if [ "$FORCE" = "true" ]; then args+=(--force); fi
+          istatsync run "${ids[@]}" "${args[@]}"
+
+      - name: Salva lo stato
+        if: always() && env.PUBLISH == 'artifact'
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: istatsync-data-${{ github.run_id }}
+
+      - name: File scaricati
+        if: always() && env.PUBLISH == 'artifact'
+        uses: actions/upload-artifact@v5
+        with:
+          name: istat-dati
+          path: |
+            data
+            !data/.cache
+          retention-days: 30
+          if-no-files-found: ignore

@@ -1,0 +1,195 @@
+# Datasets published by istatsync. See README, "Aggiungere un dataset".
+#
+# Dimensions left out of `filter` are downloaded in full. Use
+# `istatsync describe <dataflow> --codes <DIM>` to see the available codes.
+
+[defaults]
+filter = { REF_AREA = "IT" }
+
+# ---------------------------------------------------------------------------
+# Trimestrali
+# ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "famiglie_conto_trimestrale"
+title = "Famiglie consumatrici: sequenza dei conti (trimestrale)"
+dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_1"
+frequency = "Q"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+sheets_by = "ADJUSTMENT"
+negate = ["*_D_*"]
+notes = "Conti economici trimestrali per settore istituzionale. Gli impieghi (codici *_D_*) hanno il segno meno solo nel file Excel."
+
+[[dataset]]
+id = "famiglie_destagionalizzati_trimestrali"
+title = "Famiglie consumatrici: aggregati destagionalizzati (trimestrale)"
+dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_3"
+frequency = "Q"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+negate = ["*_D_*"]
+notes = "La sequenza dei conti trimestrale ISTAT è solo grezza: le serie destagionalizzate sono in questo dataflow separato."
+
+[[dataset]]
+id = "famiglie_indicatori_trimestrali"
+title = "Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (trimestrale)"
+dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_2"
+frequency = "Q"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "consumi_famiglie_trimestrali"
+title = "Spesa per consumi finali delle famiglie (trimestrale)"
+dataflow = "163_1226_DF_DCCN_QNA1_3"
+frequency = "Q"
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "consumi_coicop_trimestrali"
+title = "Spesa delle famiglie per voce di spesa (COICOP 2 cifre) e durata (trimestrale)"
+dataflow = "163_1226_DF_DCCN_QNA1_4"
+frequency = "Q"
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "popolazione_trimestrale"
+title = "Popolazione media del periodo (trimestrale)"
+dataflow = "163_88_DF_DCCN_OCCQSEC2010_2"
+frequency = "Q"
+
+[[dataset]]
+id = "ula_trimestrali"
+title = "Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (trimestrale)"
+dataflow = "163_88_DF_DCCN_OCCQSEC2010_1"
+frequency = "Q"
+filter = { REF_AREA = "IT", DATA_TYPE_AGGR = ["FT", "PS", "HW"], EMPLOYMENT_STATUS = ["1", "2", "9"], TYPE_EMPLOYMENT = "TOT" }
+sheets_by = "ADJUSTMENT"
+notes = "FT = unità di lavoro (ULA), PS = occupati, HW = ore lavorate, in migliaia. EMPLOYMENT_STATUS 1 = dipendenti, 2 = indipendenti, 9 = totale. Attenzione: per il reddito da lavoro dipendente per ULA servono le ULA (FT), non gli occupati (PS)."
+
+[[dataset]]
+id = "redditi_lavoro_trimestrali"
+title = "Redditi da lavoro dipendente, retribuzioni lorde e contributi per branca (trimestrale)"
+dataflow = "163_1226_DF_DCCN_QNA1_5"
+frequency = "Q"
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "ipab_trimestrale"
+title = "Prezzi delle abitazioni (IPAB), base 2025 (trimestrale, dal 2010)"
+dataflow = "143_497_DF_DCSP_IPAB_6"
+frequency = "Q"
+sheets_by = "MEASURE"
+notes = "Il dato dell'ultimo trimestre è provvisorio. Serve per stimare la ricchezza immobiliare degli anni non ancora pubblicati."
+
+[[dataset]]
+id = "ricchezza_finanziaria_trimestrale"
+title = "Famiglie e ISP: attività e passività finanziarie, consistenze e transazioni (Banca d'Italia, trimestrale)"
+source = "ecb"
+dataflow = "QSA"
+frequency = "Q"
+filter = { ADJUSTMENT = "N", REF_AREA = "IT", COUNTERPART_AREA = "W0", REF_SECTOR = "S1M", COUNTERPART_SECTOR = "S1", CONSOLIDATION = "N", ACCOUNTING_ENTRY = ["A", "L"], STO = ["LE", "F"], MATURITY = "_Z", EXPENDITURE = "_Z", UNIT_MEASURE = "XDC", CURRENCY_DENOM = "_T", VALUATION = "S", PRICES = "V", TRANSFORMATION = "N", CUST_BREAKDOWN = "_T" }
+sheets_by = "STO"
+notes = "Conti finanziari della Banca d'Italia (tavola TFAT0012), letti dal dataset QSA della BCE a cui la Banca li trasmette: stessi valori, ma con un'API pubblica. Settore S1M = famiglie e istituzioni senza scopo di lucro (perimetro diverso da S14A del reddito). LE = consistenze, F = transazioni; A = attività, L = passività; INSTR_ASSET F = totale. Ricchezza finanziaria netta = attività - passività (LE, F)."
+
+# ---------------------------------------------------------------------------
+# Annuali
+# ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "ula_annuali"
+title = "Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (annuale)"
+dataflow = "92_507_DF_DCCN_OCCNSEC2010_1"
+frequency = "A"
+filter = { REF_AREA = "IT", DATA_TYPE_AGGR = ["FT", "PS", "HW"], EMPLOYMENT_STATUS = ["1", "2", "9"], TYPE_EMPLOYMENT = "TOT" }
+
+[[dataset]]
+id = "ipab_annuale"
+title = "Prezzi delle abitazioni (IPAB), base 2025, medie annue (dal 2010)"
+dataflow = "143_497_DF_DCSP_IPAB_7"
+frequency = "A"
+sheets_by = "MEASURE"
+
+[[dataset]]
+id = "famiglie_conto_annuale"
+title = "Famiglie consumatrici: sequenza dei conti (annuale)"
+dataflow = "94_1063_DF_DCCN_ISTITUZ_ANA1_1"
+frequency = "A"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+negate = ["*_D_*"]
+notes = "Conti economici annuali per settore istituzionale. Gli impieghi (codici *_D_*) hanno il segno meno solo nel file Excel."
+
+[[dataset]]
+id = "famiglie_indicatori_annuali"
+title = "Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (annuale)"
+dataflow = "94_1063_DF_DCCN_ISTITUZ_ANA1_2"
+frequency = "A"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+
+[[dataset]]
+id = "consumi_coicop_annuali"
+title = "Spesa delle famiglie per voce di spesa (COICOP 3 cifre) e durata (annuale)"
+dataflow = "92_1225_DF_DCCN_ANA1_6"
+frequency = "A"
+
+[[dataset]]
+id = "valori_pro_capite_annuali"
+title = "PIL, reddito e consumi per abitante (annuale)"
+dataflow = "92_1225_DF_DCCN_ANA1_7"
+frequency = "A"
+
+[[dataset]]
+id = "popolazione_annuale"
+title = "Popolazione media annua"
+dataflow = "92_507_DF_DCCN_OCCNSEC2010_3"
+frequency = "A"
+
+# ---------------------------------------------------------------------------
+# Prezzi al consumo (NIC): disattivati.
+#
+# Non servono alla tabella sul reddito disponibile e sono i download più
+# pesanti (ECOICOP: 160 mila righe, 32 MB). Si scaricano lo stesso con
+# `istatsync run nic_ecoicop_mensili`, oppure togliendo `enabled = false`.
+#
+# Da gennaio 2026 ISTAT pubblica il NIC in base 2025 con classificazione
+# ECOICOP 2. DATA_TYPE 85 = base 2025 (dal 2026), DATA_TYPE 39 = serie nelle
+# basi precedenti (fino a dicembre 2025). MEASURE: 4 = indice,
+# 6 = variazione congiunturale, 7 = tendenziale, 8 = media annua.
+# ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "nic_tipologie_mensili"
+enabled = false
+title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 2025)"
+dataflow = "167_745_DF_DCSP_NIC1B2025_2"
+frequency = "M"
+filter = { REF_AREA = ["IT", "ITC", "ITD", "ITE", "ITF", "ITG"] }
+sheets_by = "MEASURE"
+
+[[dataset]]
+id = "nic_tipologie_mensili_base2015"
+enabled = false
+title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile 2016-2025, base 2015)"
+dataflow = "167_744_DF_DCSP_NIC1B2015_2"
+frequency = "M"
+filter = { REF_AREA = ["IT", "ITC", "ITD", "ITE", "ITF", "ITG"] }
+sheets_by = "MEASURE"
+notes = "Serie chiusa a dicembre 2025: ISTAT non la aggiorna più. Resta per continuità con i file precedenti."
+
+[[dataset]]
+id = "nic_ecoicop_mensili"
+enabled = false
+title = "NIC per voce ECOICOP 2, numeri indici (mensile, tutte le basi)"
+dataflow = "167_745_DF_DCSP_NIC1B2025_6"
+frequency = "M"
+filter = { REF_AREA = "IT", MEASURE = "4" }
+sheets_by = "DATA_TYPE"
+notes = "Solo numeri indici, un foglio per base: 1995=100 (1996-2010), 2010=100 (2011-2015), 2015=100 (2016-2025), 2025=100 (dal 2026). Le basi non sono raccordate tra loro."
+
+[[dataset]]
+id = "nic_medie_annue"
+enabled = false
+title = "NIC medie annue per voce ECOICOP 2 (1996-2025)"
+dataflow = "167_747_DCSP_NIC2B2025_1"
+frequency = "A"
+sheets_by = "DATA_TYPE"
+notes = "Indici e variazioni medie annue, un foglio per base (1995, 2010, 2015). Le medie 2026 in base 2025 arriveranno in un dataflow nuovo."
