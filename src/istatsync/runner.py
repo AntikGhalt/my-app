@@ -14,6 +14,7 @@ from .catalog import Dataset
 from .periods import edition_key, latest_edition
 from .sdmx import RateLimited, SdmxClient, Structure, build_key
 from .sinks import Sink
+from .tables import build_tables
 from .transform import build_table, to_csv, to_excel
 
 log = logging.getLogger(__name__)
@@ -77,8 +78,19 @@ class Runner:
             # forget what was already published.
             self._save_manifest()
 
+        outcomes += self.rebuild_tables()
+        self._save_manifest()
         self._append_log(outcomes)
         return outcomes
+
+    def rebuild_tables(self, force: bool = False) -> list[Outcome]:
+        """Summary workbooks, rebuilt only when one of their inputs changed."""
+        try:
+            written = build_tables(self.sink, self.manifest, force=force or self.force)
+        except Exception as exc:
+            log.exception("summary tables failed")
+            return [Outcome("tabelle", "failed", detail=f"{type(exc).__name__}: {exc}")]
+        return [Outcome(path, "updated", detail="tabella ricostruita") for path in written]
 
     def run_one(self, ds: Dataset) -> Outcome:
         client = self.clients[ds.source]

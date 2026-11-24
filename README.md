@@ -66,6 +66,43 @@ I valori scaricati coincidono con quelli controllati a mano:
 | IPAB II trim. 2026: congiunturale / tendenziale | +1,7% / +4,0% |
 | IPAB media 2025 su 2024; 1° sem. 2026 su 1° sem. 2025 | +4,0% / +4,55% |
 
+## Tabelle di sintesi
+
+Dopo ogni aggiornamento vengono ricostruiti due file Excel in `tabelle/`, solo
+se è cambiato almeno uno dei dati che usano (la versione precedente va in
+`archivio/tabelle/`):
+
+* `tabella_reddito_trimestrale.xlsx`: trimestri o semestri, dai dati
+  trimestrali;
+* `tabella_reddito_annuale.xlsx`: anni, dai dati annuali.
+
+Nel foglio **Tabella** si scelgono la frequenza (solo nel trimestrale) e i
+quattro periodi da confrontare con i menu a tendina nelle celle gialle;
+l'ultimo periodo è il riferimento per le variazioni e per i prezzi. Le righe:
+componenti del reddito disponibile (risorse meno impieghi, rettifica D8
+compresa), reddito disponibile lordo, consumi delle famiglie residenti,
+ricchezza finanziaria netta; gli stessi valori a prezzi dell'ultimo periodo;
+valori per abitante e per ULA dipendente; deflatore, propensione al consumo e
+una riga di controllo che verifica che le componenti tornino al reddito.
+
+Tutto è calcolato con formule a partire dai fogli **Dati** (serie grezze
+dell'ultima edizione, non toccate) e **Serie** (somme, medie e valori di fine
+periodo per ogni trimestre, semestre o anno). Il foglio **Note** riporta
+edizioni e definizioni. Un periodo con dati incompleti risulta `n.d.`; una
+variazione tra valori di segno opposto `n.s.`.
+
+Sul primo semestre 2026 i risultati coincidono con la tabella costruita a mano
+(a prezzi del 1° sem. 2026, variazioni su 2007 / 2019 / 2025): reddito
+disponibile −5,9 / +4,1 / +0,5; ricchezza finanziaria netta +13,7 / +29,1 /
++4,8; redditi da lavoro dipendente per ULA −0,1 / −2,3 / +0,7.
+
+I file vanno aperti in Excel (o LibreOffice): i valori vengono calcolati
+all'apertura, quindi l'anteprima di Google Drive può mostrare celle vuote. La
+ricchezza immobiliare non c'è, perché esce solo nel rapporto annuale
+ISTAT-Banca d'Italia.
+
+Per ricostruirli senza scaricare nulla: `istatsync tabelle`.
+
 ## Avvio rapido
 
 Serve Python 3.11 o più recente.
@@ -95,6 +132,7 @@ data/
 ├── mensili/
 ├── archivio/<dataset>/<dataset>_<data>_<edizione>.xlsx|csv
 ├── log/run_log.csv          # una riga per dataset per esecuzione
+├── tabelle/                 # le due tabelle di sintesi
 ├── manifest.json            # cosa è pubblicato, edizione, hash dei dati
 └── .cache/                  # strutture SDMX
 ```

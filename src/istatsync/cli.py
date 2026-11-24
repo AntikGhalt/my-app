@@ -70,6 +70,16 @@ def cmd_run(args, settings: Settings) -> int:
     return 1 if any(o.status in ("failed", "skipped") for o in outcomes) else 0
 
 
+def cmd_tables(args, settings: Settings) -> int:
+    sink = _sink(settings, args.local)
+    runner = Runner({}, sink, settings.timezone)
+    outcomes = runner.rebuild_tables(force=True)
+    runner._save_manifest()
+    for o in outcomes:
+        print(f"{o.dataset}  {o.status}  {o.detail}")
+    return 1 if any(o.status == "failed" for o in outcomes) else 0
+
+
 def cmd_list(args, settings: Settings) -> int:
     for ds in load_catalog(settings.catalog_path):
         state = "  " if ds.enabled else "off"
@@ -105,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
         "--local", action="store_true", help="write to OUTPUT_DIR even if Drive is configured"
     )
     run.set_defaults(func=cmd_run)
+
+    tab = sub.add_parser("tabelle", help="rebuild the summary tables from published data")
+    tab.add_argument("--local", action="store_true", help="use OUTPUT_DIR even if Drive is set")
+    tab.set_defaults(func=cmd_tables)
 
     sub.add_parser("list", help="show the catalogue").set_defaults(func=cmd_list)
 
