@@ -11,9 +11,6 @@ on:
   schedule:
     # 06:23 UTC = 07:23 in winter, 08:23 in summer (Rome), Monday to Friday.
     - cron: "23 6 * * 1-5"
-  push:  # TEMPORARY: one-off check that ISTAT answers GitHub runners
-    branches: [claude/brave-meitner-itsjsw]
-    paths: [.github/workflows/update.yml]
   workflow_dispatch:
     inputs:
       datasets:
@@ -42,9 +39,9 @@ jobs:
       ISTATSYNC_DRIVE_FOLDER_ID: ${{ vars.DRIVE_FOLDER_ID }}
       HAS_DRIVE_KEY: ${{ secrets.GDRIVE_SERVICE_ACCOUNT != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -78,7 +75,7 @@ jobs:
 
       - name: Scarica e pubblica
         env:
-          DATASETS: ${{ github.event_name == 'push' && 'famiglie_indicatori_trimestrali ricchezza_finanziaria_trimestrale' || inputs.datasets }}
+          DATASETS: ${{ inputs.datasets }}
           FORCE: ${{ inputs.force }}
         run: |
           read -r -a ids <<< "$DATASETS"
@@ -95,7 +92,7 @@ jobs:
 
       - name: File scaricati
         if: always() && env.PUBLISH == 'artifact'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: istat-dati
           path: |
