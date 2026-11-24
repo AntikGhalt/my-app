@@ -1,0 +1,110 @@
+# Datasets published by istatsync. See README, "Aggiungere un dataset".
+#
+# Dimensions left out of `filter` are downloaded in full. Use
+# `istatsync describe <dataflow> --codes <DIM>` to see the available codes.
+
+[defaults]
+filter = { REF_AREA = "IT" }
+
+# ---------------------------------------------------------------------------
+# Trimestrali
+# ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "famiglie_conto_trimestrale"
+title = "Famiglie consumatrici: sequenza dei conti (trimestrale)"
+dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_1"
+frequency = "Q"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+sheets_by = "ADJUSTMENT"
+negate = ["*_D_*"]
+notes = "Conti economici trimestrali per settore istituzionale. Gli impieghi (codici *_D_*) hanno il segno meno solo nel file Excel."
+
+[[dataset]]
+id = "famiglie_indicatori_trimestrali"
+title = "Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (trimestrale)"
+dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_2"
+frequency = "Q"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "consumi_famiglie_trimestrali"
+title = "Spesa per consumi finali delle famiglie (trimestrale)"
+dataflow = "163_1226_DF_DCCN_QNA1_3"
+frequency = "Q"
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "consumi_coicop_trimestrali"
+title = "Spesa delle famiglie per voce di spesa (COICOP 2 cifre) e durata (trimestrale)"
+dataflow = "163_1226_DF_DCCN_QNA1_4"
+frequency = "Q"
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "popolazione_trimestrale"
+title = "Popolazione media del periodo (trimestrale)"
+dataflow = "163_88_DF_DCCN_OCCQSEC2010_2"
+frequency = "Q"
+
+# ---------------------------------------------------------------------------
+# Annuali
+# ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "famiglie_conto_annuale"
+title = "Famiglie consumatrici: sequenza dei conti (annuale)"
+dataflow = "94_1063_DF_DCCN_ISTITUZ_ANA1_1"
+frequency = "A"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+negate = ["*_D_*"]
+notes = "Conti economici annuali per settore istituzionale. Gli impieghi (codici *_D_*) hanno il segno meno solo nel file Excel."
+
+[[dataset]]
+id = "famiglie_indicatori_annuali"
+title = "Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (annuale)"
+dataflow = "94_1063_DF_DCCN_ISTITUZ_ANA1_2"
+frequency = "A"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+
+[[dataset]]
+id = "consumi_coicop_annuali"
+title = "Spesa delle famiglie per voce di spesa (COICOP 3 cifre) e durata (annuale)"
+dataflow = "92_1225_DF_DCCN_ANA1_6"
+frequency = "A"
+
+[[dataset]]
+id = "valori_pro_capite_annuali"
+title = "PIL, reddito e consumi per abitante (annuale)"
+dataflow = "92_1225_DF_DCCN_ANA1_7"
+frequency = "A"
+
+[[dataset]]
+id = "popolazione_annuale"
+title = "Popolazione media annua"
+dataflow = "92_507_DF_DCCN_OCCNSEC2010_3"
+frequency = "A"
+
+# ---------------------------------------------------------------------------
+# Prezzi
+# ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "nic_tipologie_mensili"
+title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 2025)"
+dataflow = "167_745_DF_DCSP_NIC1B2025_2"
+frequency = "M"
+filter = { REF_AREA = ["IT", "ITC", "ITD", "ITE", "ITF", "ITG"] }
+
+[[dataset]]
+id = "nic_ecoicop_mensili"
+title = "NIC per voce ECOICOP 2 (mensile, tutte le basi)"
+dataflow = "167_745_DF_DCSP_NIC1B2025_6"
+frequency = "M"
+
+[[dataset]]
+id = "nic_medie_annue"
+title = "NIC medie annue, ECOICOP 2 (dal 1996)"
+dataflow = "167_747_DCSP_NIC2B2025_1"
+frequency = "A"
