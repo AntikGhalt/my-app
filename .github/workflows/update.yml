@@ -3,9 +3,11 @@ name: aggiornamento dati
 # Daily check for new ISTAT / Banca d'Italia releases. Runs on GitHub's free
 # runners, so it costs nothing on Google Cloud.
 #
-# With the GDRIVE_SERVICE_ACCOUNT secret and the DRIVE_FOLDER_ID variable set,
-# files go to Google Drive. Without them they are published as a workflow
-# artifact, and the manifest is carried between runs in the Actions cache.
+# Files go to Google Drive when the DRIVE_FOLDER_ID variable is set together
+# with either GCP_WORKLOAD_IDENTITY_PROVIDER + GCP_SERVICE_ACCOUNT (keyless,
+# preferred; see scripts/setup_google_drive.sh) or the GDRIVE_SERVICE_ACCOUNT
+# secret (a JSON key). Otherwise they are published as a workflow artifact and
+# the manifest is carried between runs in the Actions cache.
 
 on:
   schedule:
@@ -29,6 +31,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write  # lets the job log into Google without a stored key
 
 jobs:
   update:
@@ -38,6 +41,7 @@ jobs:
       ISTATSYNC_OUTPUT_DIR: data
       ISTATSYNC_DRIVE_FOLDER_ID: ${{ vars.DRIVE_FOLDER_ID }}
       HAS_DRIVE_KEY: ${{ secrets.GDRIVE_SERVICE_ACCOUNT != '' }}
+      WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
     steps:
       - uses: actions/checkout@v5
 
@@ -48,8 +52,19 @@ jobs:
 
       - run: pip install ".[drive]"
 
-      - name: Credenziali Google Drive
-        if: env.HAS_DRIVE_KEY == 'true' && env.ISTATSYNC_DRIVE_FOLDER_ID != ''
+      - name: Accesso a Google senza chiavi
+        if: env.WIF_PROVIDER != '' && env.ISTATSYNC_DRIVE_FOLDER_ID != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Google Drive (federazione)
+        if: env.WIF_PROVIDER != '' && env.ISTATSYNC_DRIVE_FOLDER_ID != ''
+        run: echo "PUBLISH=drive" >> "$GITHUB_ENV"
+
+      - name: Google Drive (chiave JSON)
+        if: env.PUBLISH != 'drive' && env.HAS_DRIVE_KEY == 'true' && env.ISTATSYNC_DRIVE_FOLDER_ID != ''
         env:
           KEY: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
         run: |
