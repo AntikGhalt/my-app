@@ -13,7 +13,29 @@ istatsync list           # cosa c'è nel catalogo
 istatsync describe 163_1226_DF_DCCN_QNA1_3 --codes DATA_TYPE_AGGR
 ```
 
-<!-- DATASETS -->
+## Dati scaricati
+
+Copertura alla prima esecuzione completa (24 novembre 2026).
+
+| File | Contenuto | Dataflow ISTAT | Periodo | Serie |
+|---|---|---|---|---|
+| `trimestrali/famiglie_conto_trimestrale` | Famiglie consumatrici: sequenza dei conti (trimestrale) | `162_1064_DF_DCCN_ISTITUZ_QNA1_1` | 1999-Q1 – 2026-Q2 | 44 |
+| `trimestrali/famiglie_destagionalizzati_trimestrali` | Famiglie consumatrici: aggregati destagionalizzati (trimestrale) | `162_1064_DF_DCCN_ISTITUZ_QNA1_3` | 1999-Q1 – 2026-Q2 | 16 |
+| `trimestrali/famiglie_indicatori_trimestrali` | Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (trimestrale) | `162_1064_DF_DCCN_ISTITUZ_QNA1_2` | 1999-Q1 – 2026-Q2 | 6 |
+| `trimestrali/consumi_famiglie_trimestrali` | Spesa per consumi finali delle famiglie (trimestrale) | `163_1226_DF_DCCN_QNA1_3` | 1995-Q1 – 2026-Q2 | 198 |
+| `trimestrali/consumi_coicop_trimestrali` | Spesa delle famiglie per voce di spesa (COICOP 2 cifre) e durata (trimestrale) | `163_1226_DF_DCCN_QNA1_4` | 1995-Q1 – 2026-Q2 | 171 |
+| `trimestrali/popolazione_trimestrale` | Popolazione media del periodo (trimestrale) | `163_88_DF_DCCN_OCCQSEC2010_2` | 1995-Q1 – 2026-Q2 | 1 |
+| `annuali/famiglie_conto_annuale` | Famiglie consumatrici: sequenza dei conti (annuale) | `94_1063_DF_DCCN_ISTITUZ_ANA1_1` | 1995 – 2025 | 181 |
+| `annuali/famiglie_indicatori_annuali` | Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (annuale) | `94_1063_DF_DCCN_ISTITUZ_ANA1_2` | 1995 – 2025 | 3 |
+| `annuali/consumi_coicop_annuali` | Spesa delle famiglie per voce di spesa (COICOP 3 cifre) e durata (annuale) | `92_1225_DF_DCCN_ANA1_6` | 1995 – 2025 | 276 |
+| `annuali/valori_pro_capite_annuali` | PIL, reddito e consumi per abitante (annuale) | `92_1225_DF_DCCN_ANA1_7` | 1995 – 2025 | 29 |
+| `annuali/popolazione_annuale` | Popolazione media annua | `92_507_DF_DCCN_OCCNSEC2010_3` | 1995 – 2025 | 1 |
+| `mensili/nic_tipologie_mensili` | NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 2025) | `167_745_DF_DCSP_NIC1B2025_2` | 2026-01 – 2026-10 | 57 |
+| `mensili/nic_tipologie_mensili_base2015` | NIC per tipologia di prodotto, Italia e ripartizioni (mensile 2016-2025, base 2015) | `167_744_DF_DCSP_NIC1B2015_2` | 2016-01 – 2025-12 | 285 |
+| `mensili/nic_ecoicop_mensili` | NIC per voce ECOICOP 2, numeri indici (mensile, tutte le basi) | `167_745_DF_DCSP_NIC1B2025_6` | 1996-01 – 2026-10 | 2413 |
+| `annuali/nic_medie_annue` | NIC medie annue per voce ECOICOP 2 (1996-2025) | `167_747_DCSP_NIC2B2025_1` | 1996 – 2025 | 2938 |
+
+Per tutti i conti nazionali si usa l'ultima edizione completa (a novembre 2026: 2026M10 per i trimestrali e i conti annuali per settore, 2026M9 per gli altri annuali). Il settore è sempre S14A, *famiglie consumatrici*.
 
 ## Avvio rapido
 
@@ -25,11 +47,12 @@ pip install -e ".[dev]"
 istatsync run
 ```
 
-La prima esecuzione è lenta (circa 20 minuti): per ogni dataflow va scaricata
-la struttura, che ISTAT serve in un minuto o più, e tra due richieste
-passano almeno 13 secondi (vedi sotto). Le strutture restano in cache per 7
-giorni, e le esecuzioni successive scaricano solo i dataset che hanno una
-nuova edizione.
+La prima esecuzione è lenta, circa 40 minuti: per ogni dataflow va scaricata
+la struttura, che ISTAT serve in uno o due minuti, e tra due richieste passano
+almeno 13 secondi (vedi sotto). Le strutture restano in cache per 7 giorni. Le
+esecuzioni successive richiedono 5-10 minuti (24 richieste per l'intero
+catalogo) e scaricano per intero solo i dataset che hanno una nuova
+edizione.
 
 I file finiscono in `data/`:
 
@@ -174,6 +197,13 @@ nuovi. Lo stesso succede ai conti nazionali con i dataflow `..._B19_...`
 ("edizioni ottobre 2019 – luglio 2024"), che sono archivi chiusi. Quando ISTAT
 cambia base bisogna cambiare il `dataflow` nel catalogo.
 
+**Le basi del NIC non sono raccordate.** Il dataflow "tutte le basi"
+(`167_745_DF_DCSP_NIC1B2025_6`) non contiene una serie unica ma quattro serie
+distinte, una per base (1995, 2010, 2015, 2025), distinte dal codice
+`DATA_TYPE` e con etichette identiche fino al trentesimo carattere. Nell'Excel
+sono su fogli separati; per una serie lunga vanno raccordate con i
+coefficienti ISTAT.
+
 **Formato.** Si chiede SDMX-CSV
 (`Accept: application/vnd.sdmx.data+csv;version=1.0.0`) invece dell'XML
 generico: è più leggero da scaricare e non richiede un parser fatto a mano. I
@@ -249,6 +279,26 @@ gcloud run jobs executions list --job istatsync --region <regione>
 Con il servizio precedente si eliminano servizio e vecchio job dello scheduler:
 `gcloud run services delete istat-pipeline` e
 `gcloud scheduler jobs delete istat-daily`.
+
+## Dalla versione 1
+
+| File v1 | File v2 | Cosa cambia |
+|---|---|---|
+| `ISTAT_Reddito_disponibile_famiglie_LATEST.xlsx` | `trimestrali/famiglie_conto_trimestrale` | tutta la sequenza dei conti S14A (44 voci invece di 14); destagionalizzati in `famiglie_destagionalizzati_trimestrali` |
+| `ISTAT_Consumi_famiglie_LATEST.xlsx` | `trimestrali/consumi_famiglie_trimestrali` | anche le voci COICOP e i dati corretti per i giorni lavorativi |
+| `ISTAT_NIC_ECOICOP_LATEST.xlsx` | `mensili/nic_ecoicop_mensili` | ECOICOP 2, base 2025, storia dal 1996; periodi in riga invece che in colonna |
+| `ISTAT_NIC_Tipologia_LATEST.xlsx` | `mensili/nic_tipologie_mensili` (+ `_base2015`) | base 2025 dal 2026; la base 2015 resta come serie chiusa |
+
+Nel conto per settore istituzionale ISTAT usa la stessa etichetta per la
+risorsa e per l'impiego (ad esempio "contributi sociali netti" compare due
+volte). Il CSV ha una colonna `FLUSSO` (risorse / impieghi / saldi, ricavata dal
+codice SEC: `_C_`, `_D_`, `_B_`) e nell'Excel le intestazioni iniziano con
+"Risorse - ", "Impieghi - ", "Saldi - ". Se due serie hanno comunque la stessa
+intestazione viene aggiunto il codice tra parentesi quadre.
+
+I file Excel v1 non vanno spostati: il nuovo sistema non li legge. Il primo
+giro crea i file nuovi accanto e da lì in poi tiene traccia delle versioni nel
+`manifest.json`.
 
 ## Sviluppo
 

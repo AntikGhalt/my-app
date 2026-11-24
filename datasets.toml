@@ -21,6 +21,15 @@ negate = ["*_D_*"]
 notes = "Conti economici trimestrali per settore istituzionale. Gli impieghi (codici *_D_*) hanno il segno meno solo nel file Excel."
 
 [[dataset]]
+id = "famiglie_destagionalizzati_trimestrali"
+title = "Famiglie consumatrici: aggregati destagionalizzati (trimestrale)"
+dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_3"
+frequency = "Q"
+filter = { REF_AREA = "IT", INSTITUTIONAL_SECTOR = "S14A" }
+negate = ["*_D_*"]
+notes = "La sequenza dei conti trimestrale ISTAT è solo grezza: le serie destagionalizzate sono in questo dataflow separato."
+
+[[dataset]]
 id = "famiglie_indicatori_trimestrali"
 title = "Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (trimestrale)"
 dataflow = "162_1064_DF_DCCN_ISTITUZ_QNA1_2"
@@ -87,7 +96,12 @@ dataflow = "92_507_DF_DCCN_OCCNSEC2010_3"
 frequency = "A"
 
 # ---------------------------------------------------------------------------
-# Prezzi
+# Prezzi al consumo (NIC)
+#
+# Da gennaio 2026 ISTAT pubblica il NIC in base 2025 con classificazione
+# ECOICOP 2. DATA_TYPE 85 = base 2025 (dal 2026), DATA_TYPE 39 = serie nelle
+# basi precedenti (fino a dicembre 2025). MEASURE: 4 = indice,
+# 6 = variazione congiunturale, 7 = tendenziale, 8 = media annua.
 # ---------------------------------------------------------------------------
 
 [[dataset]]
@@ -96,15 +110,30 @@ title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 202
 dataflow = "167_745_DF_DCSP_NIC1B2025_2"
 frequency = "M"
 filter = { REF_AREA = ["IT", "ITC", "ITD", "ITE", "ITF", "ITG"] }
+sheets_by = "MEASURE"
+
+[[dataset]]
+id = "nic_tipologie_mensili_base2015"
+title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile 2016-2025, base 2015)"
+dataflow = "167_744_DF_DCSP_NIC1B2015_2"
+frequency = "M"
+filter = { REF_AREA = ["IT", "ITC", "ITD", "ITE", "ITF", "ITG"] }
+sheets_by = "MEASURE"
+notes = "Serie chiusa a dicembre 2025: ISTAT non la aggiorna più. Resta per continuità con i file precedenti."
 
 [[dataset]]
 id = "nic_ecoicop_mensili"
-title = "NIC per voce ECOICOP 2 (mensile, tutte le basi)"
+title = "NIC per voce ECOICOP 2, numeri indici (mensile, tutte le basi)"
 dataflow = "167_745_DF_DCSP_NIC1B2025_6"
 frequency = "M"
+filter = { REF_AREA = "IT", MEASURE = "4" }
+sheets_by = "DATA_TYPE"
+notes = "Solo numeri indici, un foglio per base: 1995=100 (1996-2010), 2010=100 (2011-2015), 2015=100 (2016-2025), 2025=100 (dal 2026). Le basi non sono raccordate tra loro."
 
 [[dataset]]
 id = "nic_medie_annue"
-title = "NIC medie annue, ECOICOP 2 (dal 1996)"
+title = "NIC medie annue per voce ECOICOP 2 (1996-2025)"
 dataflow = "167_747_DCSP_NIC2B2025_1"
 frequency = "A"
+sheets_by = "DATA_TYPE"
+notes = "Indici e variazioni medie annue, un foglio per base (1995, 2010, 2015). Le medie 2026 in base 2025 arriveranno in un dataflow nuovo."
