@@ -1,10 +1,11 @@
 # istatsync
 
-Scarica dalle API SDMX dell'ISTAT le serie che servono per il **conto delle
-famiglie** (reddito, consumi, risparmio, prezzi, popolazione), sia trimestrali
-sia annuali, e le pubblica come CSV ed Excel su una cartella locale o su
-Google Drive. A ogni nuova edizione ISTAT i file vengono aggiornati e la
-versione precedente finisce in archivio.
+Scarica le serie per la tabella sul **reddito disponibile delle famiglie**:
+reddito e componenti, consumi e deflatore, ULA e redditi da lavoro dipendente,
+popolazione e prezzi delle abitazioni dall'ISTAT, ricchezza finanziaria dalla
+Banca d'Italia. Trimestrali e annuali. I file escono in CSV ed Excel, in una
+cartella locale o su Google Drive; a ogni nuova edizione vengono aggiornati e
+la versione precedente va in archivio.
 
 ```
 istatsync run            # scarica tutto quello che è cambiato
@@ -15,27 +16,55 @@ istatsync describe 163_1226_DF_DCCN_QNA1_3 --codes DATA_TYPE_AGGR
 
 ## Dati scaricati
 
-Copertura alla prima esecuzione completa (24 novembre 2026).
+Il catalogo è pensato per la tabella sul reddito disponibile delle famiglie
+(semestrale, con ricchezza, consumi e ULA). Copertura verificata il 24 novembre
+2026 sulle API ISTAT e BCE.
 
-| File | Contenuto | Dataflow ISTAT | Periodo | Serie |
+| File | Contenuto | Fonte | Periodo | Serie |
 |---|---|---|---|---|
-| `trimestrali/famiglie_conto_trimestrale` | Famiglie consumatrici: sequenza dei conti (trimestrale) | `162_1064_DF_DCCN_ISTITUZ_QNA1_1` | 1999-Q1 – 2026-Q2 | 44 |
-| `trimestrali/famiglie_destagionalizzati_trimestrali` | Famiglie consumatrici: aggregati destagionalizzati (trimestrale) | `162_1064_DF_DCCN_ISTITUZ_QNA1_3` | 1999-Q1 – 2026-Q2 | 16 |
-| `trimestrali/famiglie_indicatori_trimestrali` | Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (trimestrale) | `162_1064_DF_DCCN_ISTITUZ_QNA1_2` | 1999-Q1 – 2026-Q2 | 6 |
-| `trimestrali/consumi_famiglie_trimestrali` | Spesa per consumi finali delle famiglie (trimestrale) | `163_1226_DF_DCCN_QNA1_3` | 1995-Q1 – 2026-Q2 | 198 |
-| `trimestrali/consumi_coicop_trimestrali` | Spesa delle famiglie per voce di spesa (COICOP 2 cifre) e durata (trimestrale) | `163_1226_DF_DCCN_QNA1_4` | 1995-Q1 – 2026-Q2 | 171 |
-| `trimestrali/popolazione_trimestrale` | Popolazione media del periodo (trimestrale) | `163_88_DF_DCCN_OCCQSEC2010_2` | 1995-Q1 – 2026-Q2 | 1 |
-| `annuali/famiglie_conto_annuale` | Famiglie consumatrici: sequenza dei conti (annuale) | `94_1063_DF_DCCN_ISTITUZ_ANA1_1` | 1995 – 2025 | 181 |
-| `annuali/famiglie_indicatori_annuali` | Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (annuale) | `94_1063_DF_DCCN_ISTITUZ_ANA1_2` | 1995 – 2025 | 3 |
-| `annuali/consumi_coicop_annuali` | Spesa delle famiglie per voce di spesa (COICOP 3 cifre) e durata (annuale) | `92_1225_DF_DCCN_ANA1_6` | 1995 – 2025 | 276 |
-| `annuali/valori_pro_capite_annuali` | PIL, reddito e consumi per abitante (annuale) | `92_1225_DF_DCCN_ANA1_7` | 1995 – 2025 | 29 |
-| `annuali/popolazione_annuale` | Popolazione media annua | `92_507_DF_DCCN_OCCNSEC2010_3` | 1995 – 2025 | 1 |
-| `mensili/nic_tipologie_mensili` | NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 2025) | `167_745_DF_DCSP_NIC1B2025_2` | 2026-01 – 2026-10 | 57 |
-| `mensili/nic_tipologie_mensili_base2015` | NIC per tipologia di prodotto, Italia e ripartizioni (mensile 2016-2025, base 2015) | `167_744_DF_DCSP_NIC1B2015_2` | 2016-01 – 2025-12 | 285 |
-| `mensili/nic_ecoicop_mensili` | NIC per voce ECOICOP 2, numeri indici (mensile, tutte le basi) | `167_745_DF_DCSP_NIC1B2025_6` | 1996-01 – 2026-10 | 2413 |
-| `annuali/nic_medie_annue` | NIC medie annue per voce ECOICOP 2 (1996-2025) | `167_747_DCSP_NIC2B2025_1` | 1996 – 2025 | 2938 |
+| `trimestrali/famiglie_conto_trimestrale` | Famiglie consumatrici: sequenza dei conti (trimestrale) | ISTAT, `162_1064_DF_DCCN_ISTITUZ_QNA1_1` | 1999-Q1 – 2026-Q2 | 44 |
+| `trimestrali/famiglie_destagionalizzati_trimestrali` | Famiglie consumatrici: aggregati destagionalizzati (trimestrale) | ISTAT, `162_1064_DF_DCCN_ISTITUZ_QNA1_3` | 1999-Q1 – 2026-Q2 | 16 |
+| `trimestrali/famiglie_indicatori_trimestrali` | Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (trimestrale) | ISTAT, `162_1064_DF_DCCN_ISTITUZ_QNA1_2` | 1999-Q1 – 2026-Q2 | 6 |
+| `trimestrali/consumi_famiglie_trimestrali` | Spesa per consumi finali delle famiglie (trimestrale) | ISTAT, `163_1226_DF_DCCN_QNA1_3` | 1995-Q1 – 2026-Q2 | 198 |
+| `trimestrali/consumi_coicop_trimestrali` | Spesa delle famiglie per voce di spesa (COICOP 2 cifre) e durata (trimestrale) | ISTAT, `163_1226_DF_DCCN_QNA1_4` | 1995-Q1 – 2026-Q2 | 171 |
+| `trimestrali/popolazione_trimestrale` | Popolazione media del periodo (trimestrale) | ISTAT, `163_88_DF_DCCN_OCCQSEC2010_2` | 1995-Q1 – 2026-Q2 | 1 |
+| `trimestrali/ula_trimestrali` | Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (trimestrale) | ISTAT, `163_88_DF_DCCN_OCCQSEC2010_1` | 1995-Q1 – 2026-Q2 | 483 |
+| `trimestrali/redditi_lavoro_trimestrali` | Redditi da lavoro dipendente, retribuzioni lorde e contributi per branca (trimestrale) | ISTAT, `163_1226_DF_DCCN_QNA1_5` | 1995-Q1 – 2026-Q2 | 210 |
+| `trimestrali/ipab_trimestrale` | Prezzi delle abitazioni (IPAB), base 2025 (trimestrale, dal 2010) | ISTAT, `143_497_DF_DCSP_IPAB_6` | 2010-Q1 – 2026-Q2 | 9 |
+| `trimestrali/ricchezza_finanziaria_trimestrale` | Famiglie e ISP: attività e passività finanziarie, consistenze e transazioni (Banca d'Italia, trimestrale) | Banca d'Italia (via BCE), `QSA` | 1999-Q1 – 2026-Q2 | 66 |
+| `annuali/ula_annuali` | Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (annuale) | ISTAT, `92_507_DF_DCCN_OCCNSEC2010_1` | 1995 – 2025 | 846 |
+| `annuali/ipab_annuale` | Prezzi delle abitazioni (IPAB), base 2025, medie annue (dal 2010) | ISTAT, `143_497_DF_DCSP_IPAB_7` | 2010 – 2025 | 6 |
+| `annuali/famiglie_conto_annuale` | Famiglie consumatrici: sequenza dei conti (annuale) | ISTAT, `94_1063_DF_DCCN_ISTITUZ_ANA1_1` | 1995 – 2025 | 181 |
+| `annuali/famiglie_indicatori_annuali` | Famiglie consumatrici: propensione al risparmio, potere d'acquisto e altri indicatori (annuale) | ISTAT, `94_1063_DF_DCCN_ISTITUZ_ANA1_2` | 1995 – 2025 | 3 |
+| `annuali/consumi_coicop_annuali` | Spesa delle famiglie per voce di spesa (COICOP 3 cifre) e durata (annuale) | ISTAT, `92_1225_DF_DCCN_ANA1_6` | 1995 – 2025 | 276 |
+| `annuali/valori_pro_capite_annuali` | PIL, reddito e consumi per abitante (annuale) | ISTAT, `92_1225_DF_DCCN_ANA1_7` | 1995 – 2025 | 29 |
+| `annuali/popolazione_annuale` | Popolazione media annua | ISTAT, `92_507_DF_DCCN_OCCNSEC2010_3` | 1995 – 2025 | 1 |
+| `mensili/nic_tipologie_mensili` *(spento)* | NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 2025) | ISTAT, `167_745_DF_DCSP_NIC1B2025_2` | 2026-01 – 2026-10 | 57 |
+| `mensili/nic_tipologie_mensili_base2015` *(spento)* | NIC per tipologia di prodotto, Italia e ripartizioni (mensile 2016-2025, base 2015) | ISTAT, `167_744_DF_DCSP_NIC1B2015_2` | 2016-01 – 2025-12 | 285 |
+| `mensili/nic_ecoicop_mensili` *(spento)* | NIC per voce ECOICOP 2, numeri indici (mensile, tutte le basi) | ISTAT, `167_745_DF_DCSP_NIC1B2025_6` | 1996-01 – 2026-10 | 2413 |
+| `annuali/nic_medie_annue` *(spento)* | NIC medie annue per voce ECOICOP 2 (1996-2025) | ISTAT, `167_747_DCSP_NIC2B2025_1` | 1996 – 2025 | 2938 |
 
-Per tutti i conti nazionali si usa l'ultima edizione completa (a novembre 2026: 2026M10 per i trimestrali e i conti annuali per settore, 2026M9 per gli altri annuali). Il settore è sempre S14A, *famiglie consumatrici*.
+I conti nazionali usano l'ultima edizione completa (a novembre 2026: 2026M10 per i
+trimestrali e i conti annuali per settore, 2026M9 per gli altri annuali). Il reddito
+è sempre del settore S14A, *famiglie consumatrici*; la ricchezza finanziaria è di
+*famiglie e ISP* (S1M), come nelle tavole della Banca d'Italia.
+
+I prezzi al consumo (NIC) sono spenti: non servono alla tabella e sono i download
+più pesanti. Restano nel catalogo e si scaricano con `istatsync run nic_ecoicop_mensili`
+o togliendo `enabled = false`.
+
+### Controllo sui dati della tabella 1° semestre 2026
+
+I valori scaricati coincidono con quelli controllati a mano:
+
+| Voce | Valore |
+|---|---|
+| Reddito disponibile lordo (B6G), 1° sem. 2007 / 2019 / 2025, mln € | 537.232 / 566.145 / 690.209 |
+| ULA dipendenti, II trim. 2026, migliaia (grezzi) | 18.473 (occupati: 20.857) |
+| Attività finanziarie famiglie e ISP, dic. 2024, mln € | 6.033.659 |
+| Transazioni II trim. 2026: attività / passività, mln € | 23.925 / 17.110 |
+| IPAB II trim. 2026: congiunturale / tendenziale | +1,7% / +4,0% |
+| IPAB media 2025 su 2024; 1° sem. 2026 su 1° sem. 2025 | +4,0% / +4,55% |
 
 ## Avvio rapido
 
@@ -49,7 +78,7 @@ istatsync run
 
 La prima esecuzione è lenta, circa 40 minuti: per ogni dataflow va scaricata
 la struttura, che ISTAT serve in uno o due minuti, e tra due richieste passano
-almeno 13 secondi (vedi sotto). Le strutture restano in cache per 7 giorni. Le
+almeno 13 secondi (vedi sotto). Le strutture restano in cache per 30 giorni. Le
 esecuzioni successive richiedono 5-10 minuti (24 richieste per l'intero
 catalogo) e scaricano per intero solo i dataset che hanno una nuova
 edizione.
@@ -94,10 +123,10 @@ Tutto si imposta con variabili d'ambiente (o con un file `.env`, vedi
 | `ISTATSYNC_OUTPUT_DIR` | `data` | cartella locale di output |
 | `ISTATSYNC_DRIVE_FOLDER_ID` | – | se impostata, i file vanno su questa cartella Drive invece che in locale |
 | `ISTATSYNC_CATALOG` | `datasets.toml` | catalogo dei dataset |
-| `ISTATSYNC_MIN_REQUEST_INTERVAL` | `13` | secondi tra due richieste a ISTAT |
+| `ISTATSYNC_MIN_REQUEST_INTERVAL` | `13` | secondi tra due richieste a ISTAT (la BCE usa 2) |
 | `ISTATSYNC_REQUEST_TIMEOUT` | `300` | timeout di una richiesta, in secondi |
 | `ISTATSYNC_MAX_RETRIES` | `3` | tentativi su errori 5xx o di rete |
-| `ISTATSYNC_STRUCTURE_TTL_DAYS` | `7` | durata della cache delle strutture |
+| `ISTATSYNC_STRUCTURE_TTL_DAYS` | `30` | durata della cache delle strutture |
 | `ISTATSYNC_BASE_URL` | `https://esploradati.istat.it/SDMXWS/rest` | endpoint SDMX |
 | `ISTATSYNC_TIMEZONE` | `Europe/Rome` | fuso per date di log e archivio |
 
@@ -109,7 +138,8 @@ uno:
 1. trova il dataflow su [esploradati.istat.it](https://esploradati.istat.it/)
    (l'id è nell'URL, tipo `163_1226_DF_DCCN_QNA1_3`);
 2. guarda dimensioni e codici:
-   `istatsync describe 163_1226_DF_DCCN_QNA1_3 --codes ADJUSTMENT,VALUATION`;
+   `istatsync describe 163_1226_DF_DCCN_QNA1_3 --codes ADJUSTMENT,VALUATION`
+   (per la BCE: `istatsync describe QSA --source ecb --codes STO`);
 3. aggiungi un blocco al catalogo:
 
 ```toml
@@ -123,6 +153,8 @@ filter = { REF_AREA = "IT", VALUATION = ["V", "L_2020"] }
 sheets_by = "ADJUSTMENT"                 # opzionale: un foglio Excel per valore
 negate = ["*_D_*"]                       # opzionale: impieghi col segno meno (solo Excel)
 edition = "2025M10"                      # opzionale: fissa un'edizione
+source = "ecb"                           # opzionale: "istat" (default) o "ecb"
+enabled = false                          # opzionale: resta nel catalogo ma non si scarica
 ```
 
 Le dimensioni non elencate in `filter` vengono scaricate tutte. `FREQ` si
@@ -148,9 +180,9 @@ Per ogni dataset:
    Excel e CSV vengono sovrascritti e il `manifest.json` aggiornato.
 
 Un dataset che fallisce non blocca gli altri. Il processo esce con codice 1 se
-almeno un dataset è fallito, così Cloud Run o la CI lo segnalano.
+almeno un dataset è fallito, così il run su GitHub risulta in errore e arriva la mail di notifica.
 
-## Insidie dell'API ISTAT
+## Insidie delle API ISTAT e Banca d'Italia
 
 Cose imparate a spese nostre, tutte gestite nel codice.
 
@@ -187,7 +219,7 @@ dataset vuoto ma HTTP 404 con `NoRecordsFound`.
 **Le strutture sono lente e pesanti.** `dataflow/.../?references=all` per i
 conti nazionali impiega più di un minuto (la codelist `REF_AREA` ha oltre
 12.000 codici). Per questo vanno in cache nella stessa destinazione dei file,
-anche su Drive: un job Cloud Run parte ogni volta da un disco vuoto.
+anche su Drive: un job automatico parte ogni volta da un disco vuoto.
 
 **Cambi di base dei prezzi.** Da gennaio 2026 il NIC è pubblicato in base 2025
 con classificazione ECOICOP 2, in dataflow nuovi (`167_745_...`). I vecchi
@@ -211,74 +243,83 @@ codici restano testo (`"001"` non diventa `1`), le colonne `NOTE_*` vengono
 scartate. `UNIT_MULT` indica la potenza di dieci (6 = milioni di euro): i valori
 non vengono riscalati.
 
+**Ricchezza finanziaria: niente API dalla Banca d'Italia.** Il portale Infostat
+(tavola TFAT0012) non ha un'API pubblica documentata: la pagina è
+un'applicazione JavaScript e il download diretto viene rifiutato. La Banca
+d'Italia trasmette però gli stessi conti finanziari alla BCE (dataset QSA, settore
+S1M), che li pubblica con un'API SDMX stabile. I valori coincidono con quelli
+della Banca, revisioni comprese (attività a dicembre 2024: 6.033.659 milioni in
+entrambe le fonti). La BCE li riceve nella stessa settimana in cui la Banca
+d'Italia li diffonde.
+
 **Endpoint.** `esploradati.istat.it/SDMXWS/rest` è quello che risponde in modo
 stabile; `sdmx.istat.it` reindirizza. Se ISTAT lo cambia basta impostare
 `ISTATSYNC_BASE_URL`.
 
-## Pubblicazione su Google Drive
+## Esecuzione automatica, senza costi
 
-Con `ISTATSYNC_DRIVE_FOLDER_ID` impostata i file vengono scritti nella cartella
-indicata (funziona anche con i Drive condivisi), con la stessa struttura di
-sottocartelle. Le sottocartelle mancanti vengono create. I file esistenti
-vengono aggiornati sul posto, quindi mantengono lo stesso id e lo stesso link.
+Il workflow [`.github/workflows/update.yml`](.github/workflows/update.yml) gira
+su GitHub Actions dal lunedì al venerdì alle 7:23 (8:23 con l'ora legale) e si
+può lanciare a mano da *Actions → aggiornamento dati → Run workflow*, anche solo
+per alcuni dataset.
 
-Le credenziali sono le Application Default Credentials: in locale
-`gcloud auth application-default login`, su Cloud Run il service account del
-job. L'account deve avere il ruolo *Gestore contenuti* sulla cartella.
+**Perché non Cloud Run.** Su GitHub Actions non c'è niente da pagare su Google
+Cloud: niente Cloud Run, Cloud Build, Artifact Registry o Cloud Scheduler, e
+nessun account di fatturazione da tenere attivo. Le Actions sono gratuite per i
+repository pubblici; per quelli privati il piano gratuito dà 2.000 minuti al
+mese e il limite di spesa predefinito è 0 €, quindi oltre la soglia il job si
+ferma invece di addebitare. Un giro giornaliero senza novità dura 5-10 minuti
+(circa 150-200 minuti al mese); una volta al mese, quando scade la cache delle
+strutture, circa 30.
 
-`istatsync run --local` scrive comunque in locale, utile per provare senza
-toccare Drive.
+Il job non parte mai due volte in parallelo (gruppo di concorrenza), per non
+superare il limite di richieste dell'ISTAT.
 
-## Deploy su Cloud Run
+### Dove finiscono i file
 
-Il processo è un batch: gira, scrive, termina. Per questo è un **Cloud Run
-Job** e non un servizio web. Rispetto alla versione precedente (servizio Flask
-pubblico chiamato via HTTP):
+**Senza configurare nulla** i file sono un *artifact* dell'esecuzione: si
+scaricano come zip dalla pagina del run e restano 30 giorni. Il `manifest.json`
+passa da un'esecuzione all'altra nella cache di GitHub, quindi i dataset non
+cambiati non vengono riscaricati.
 
-* non c'è un URL pubblico che chiunque può chiamare, facendo scattare il
-  blocco ISTAT;
-* non c'è il timeout di 120 secondi di gunicorn, che interrompeva le pipeline
-  lunghe a metà;
-* ogni esecuzione ha log, durata ed esito (successo/errore) nella console.
+**Su Google Drive**, servono:
 
-Sostituisci i valori tra `<>` con quelli del tuo progetto:
+1. un **Drive condiviso** (non "Il mio Drive": un service account non ha
+   spazio proprio e non può creare file nelle cartelle personali);
+2. un service account in un progetto Google Cloud qualsiasi, con la Drive API
+   abilitata. Né la Drive API né il service account richiedono la
+   fatturazione;
+3. il service account aggiunto al Drive condiviso come *Gestore contenuti*;
+4. su GitHub, *Settings → Secrets and variables → Actions*:
+   * secret `GDRIVE_SERVICE_ACCOUNT`: il contenuto del file JSON della chiave;
+   * variabile `DRIVE_FOLDER_ID`: l'id della cartella (l'ultima parte
+     dell'URL).
 
-```bash
-gcloud run jobs deploy istatsync \
-  --source . \
-  --region <regione> \
-  --task-timeout 3600 \
-  --max-retries 0 \
-  --memory 2Gi \
-  --service-account <service-account> \
-  --set-env-vars ISTATSYNC_DRIVE_FOLDER_ID=<id-cartella>
-```
+Se uno dei due manca il workflow torna da solo alla modalità artifact.
 
-`--max-retries 0` è voluto: se ISTAT ci sta bloccando, riprovare subito
-allunga il blocco.
+Su Drive i file esistenti vengono aggiornati sul posto, quindi mantengono lo
+stesso id e lo stesso link, e le connessioni di Tableau restano valide. Le
+sottocartelle mancanti vengono create.
 
-Esecuzione giornaliera alle 7 con Cloud Scheduler:
-
-```bash
-gcloud scheduler jobs create http istatsync-daily \
-  --location <regione> \
-  --schedule "0 7 * * *" \
-  --time-zone "Europe/Rome" \
-  --http-method POST \
-  --uri "https://run.googleapis.com/v2/projects/<progetto>/locations/<regione>/jobs/istatsync:run" \
-  --oauth-service-account-email <service-account>
-```
-
-Esecuzione manuale e log:
+### In locale
 
 ```bash
-gcloud run jobs execute istatsync --region <regione> --wait
-gcloud run jobs executions list --job istatsync --region <regione>
+istatsync run                # in ./data, oppure su Drive se è impostato ISTATSYNC_DRIVE_FOLDER_ID
+istatsync run --local        # sempre in locale
 ```
 
-Con il servizio precedente si eliminano servizio e vecchio job dello scheduler:
-`gcloud run services delete istat-pipeline` e
-`gcloud scheduler jobs delete istat-daily`.
+Per Drive in locale: `gcloud auth application-default login` con un account che
+ha accesso alla cartella, oppure `GOOGLE_APPLICATION_CREDENTIALS` che punta alla
+chiave del service account.
+
+### Se si vuole comunque Cloud Run
+
+Il `Dockerfile` produce un'immagine per un Cloud Run Job (`istatsync run`).
+Prima di usarlo: impostare un **budget con avviso** sul progetto, usare
+`--max-retries 0` (un retry automatico durante un blocco ISTAT lo allunga) e
+non esporre un servizio HTTP pubblico. Il costo vivo è basso, ma ogni deploy
+passa da Cloud Build e Artifact Registry, che sono a pagamento oltre le soglie
+gratuite.
 
 ## Dalla versione 1
 

@@ -42,6 +42,7 @@ frequency = "Q"
     [
         ('id = "Bad-Id"\ntitle="t"\ndataflow="X"\nfrequency="Q"', "lowercase"),
         ('id = "a"\ntitle="t"\ndataflow="X"\nfrequency="W"', "frequency"),
+        ('id = "a"\ntitle="t"\ndataflow="X"\nfrequency="Q"\nsource="bdi"', "source"),
         ('id = "a"\ntitle="t"\ndataflow="X"\nfrequency="Q"\nfilter = { FREQ = "A" }', "FREQ"),
     ],
 )
@@ -66,3 +67,9 @@ def test_fingerprint_tracks_definition(dataset):
 def test_local_sink_refuses_paths_outside_root(tmp_path):
     with pytest.raises(ValueError):
         LocalSink(tmp_path).write("../evil.txt", b"x")
+
+
+def test_enabled_and_notes_do_not_change_the_fingerprint(dataset):
+    from dataclasses import replace
+
+    assert dataset.fingerprint == replace(dataset, enabled=False, notes="x").fingerprint

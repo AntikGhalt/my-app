@@ -1,4 +1,8 @@
-"""Thin client for the ISTAT SDMX REST endpoint.
+"""Thin SDMX REST client for ISTAT and the ECB.
+
+The ECB endpoint is well behaved. It is used for the Banca d'Italia
+financial accounts, which the Bank transmits to the ECB unchanged (the QSA
+dataset), because the Bank's own Infostat portal has no public data API.
 
 Things the ISTAT service does that a generic SDMX client does not expect:
 
@@ -12,7 +16,7 @@ Things the ISTAT service does that a generic SDMX client does not expect:
 * "No data" is reported as HTTP 404 with a NoRecordsFound body, not as an
   empty dataset.
 * The structure endpoint is slow (a minute or more per dataflow) and big, so
-  it is cached in the output sink: a Cloud Run job starts from an empty disk
+  it is cached in the output sink: a scheduled job starts from an empty disk
   every time and would otherwise re-download every structure on every run.
 """
 
@@ -32,10 +36,42 @@ import requests
 
 log = logging.getLogger(__name__)
 
-AGENCY = "IT1"
-CSV_ACCEPT = "application/vnd.sdmx.data+csv;version=1.0.0"
 STRUCTURE_ACCEPT = "application/vnd.sdmx.structure+xml;version=2.1"
 MAX_URL_LENGTH = 340
+
+
+@dataclass(frozen=True)
+class Source:
+    """How one provider lays out its SDMX REST API."""
+
+    name: str
+    base_url: str
+    structure_path: str
+    data_path: str
+    csv_accept: str
+    min_interval: float
+
+
+SOURCES = {
+    "istat": Source(
+        name="istat",
+        base_url="https://esploradati.istat.it/SDMXWS/rest",
+        structure_path="dataflow/IT1/{flow}/latest?references=all&detail=full",
+        data_path="data/IT1,{flow},1.0/{key}/ALL/",
+        csv_accept="application/vnd.sdmx.data+csv;version=1.0.0",
+        # 5 requests/minute per IP, 1-2 day ban for offenders.
+        min_interval=13.0,
+    ),
+    "ecb": Source(
+        name="ecb",
+        base_url="https://data-api.ecb.europa.eu/service",
+        # The ECB serves QSA under several agencies; "all" finds it.
+        structure_path="dataflow/all/{flow}/latest?references=all",
+        data_path="data/{flow}/{key}",
+        csv_accept="text/csv",
+        min_interval=2.0,
+    ),
+}
 
 _NS = {
     "s": "http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure",
@@ -44,12 +80,12 @@ _NS = {
 _XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
 
-class IstatError(RuntimeError):
+class SdmxError(RuntimeError):
     pass
 
 
-class RateLimited(IstatError):
-    """ISTAT is throttling us. Continuing would risk an IP ban."""
+class RateLimited(SdmxError):
+    """The provider is throttling us. Continuing would risk an IP ban."""
 
 
 Key = Mapping[str, str | Sequence[str]]
@@ -100,27 +136,26 @@ class RequestPacer:
         self._last = self._clock()
 
 
-class IstatClient:
+class SdmxClient:
     def __init__(
         self,
-        base_url: str,
+        source: Source,
         *,
         cache: Cache | None = None,
-        min_interval: float = 13.0,
         timeout: float = 300.0,
         max_retries: int = 3,
-        structure_ttl_days: int = 7,
+        structure_ttl_days: int = 30,
         session: requests.Session | None = None,
         sleep=time.sleep,
     ):
-        self.base_url = base_url.rstrip("/")
+        self.source = source
         self.cache = cache
         self.timeout = timeout
         self.max_retries = max_retries
         self.structure_ttl = structure_ttl_days * 86400
         self.session = session or requests.Session()
         self.session.headers.setdefault("User-Agent", "istatsync/2 (+python-requests)")
-        self.pacer = RequestPacer(min_interval, sleep=sleep)
+        self.pacer = RequestPacer(source.min_interval, sleep=sleep)
         self._sleep = sleep
         self.requests_made = 0
 
@@ -138,7 +173,7 @@ class IstatClient:
             except (requests.ConnectionError, requests.Timeout) as exc:
                 log.warning("attempt %d/%d failed: %s", attempt, self.max_retries, exc)
                 if attempt == self.max_retries:
-                    raise IstatError(f"ISTAT unreachable: {exc}") from exc
+                    raise SdmxError(f"{self.source.name} unreachable: {exc}") from exc
                 self._sleep(30 * attempt)
                 continue
 
@@ -148,18 +183,18 @@ class IstatClient:
                 return None
             if resp.status_code in (403, 429):
                 raise RateLimited(
-                    f"HTTP {resp.status_code} from ISTAT: the IP is probably throttled. "
-                    "Stop and retry tomorrow; do not loop."
+                    f"HTTP {resp.status_code} from {self.source.name}: the IP is probably "
+                    "throttled. Stop and retry tomorrow; do not loop."
                 )
             if resp.status_code == 400:
-                raise IstatError(f"HTTP 400 for {resp.url}: {resp.text[:300]}")
+                raise SdmxError(f"HTTP 400 for {resp.url}: {resp.text[:300]}")
             if resp.status_code >= 500 and attempt < self.max_retries:
                 log.warning(
                     "HTTP %d, retrying (%d/%d)", resp.status_code, attempt, self.max_retries
                 )
                 self._sleep(30 * attempt)
                 continue
-            raise IstatError(f"HTTP {resp.status_code} for {resp.url}: {resp.text[:300]}")
+            raise SdmxError(f"HTTP {resp.status_code} for {resp.url}: {resp.text[:300]}")
         raise AssertionError("unreachable")
 
     # -- structure --------------------------------------------------------
@@ -168,20 +203,20 @@ class IstatClient:
         cached = self._read_cache(dataflow)
         if cached:
             return cached
-        url = f"{self.base_url}/dataflow/{AGENCY}/{dataflow}/latest"
-        resp = self._get(
-            url, params={"references": "all", "detail": "full"}, accept=STRUCTURE_ACCEPT
-        )
+        url = f"{self.source.base_url}/{self.source.structure_path.format(flow=dataflow)}"
+        resp = self._get(url, params=None, accept=STRUCTURE_ACCEPT)
         if resp is None:
-            raise IstatError(f"dataflow {dataflow} not found")
+            raise SdmxError(f"dataflow {dataflow} not found at {self.source.name}")
         structure = parse_structure(resp.content, dataflow)
         structure.fetched_at = time.time()
         if self.cache is not None:
-            self.cache.write(_cache_path(dataflow), structure.to_json().encode("utf-8"))
+            path = _cache_path(self.source.name, dataflow)
+            self.cache.write(path, structure.to_json().encode("utf-8"))
         return structure
 
     def _read_cache(self, dataflow: str) -> Structure | None:
-        raw = self.cache.read(_cache_path(dataflow)) if self.cache is not None else None
+        path = _cache_path(self.source.name, dataflow)
+        raw = self.cache.read(path) if self.cache is not None else None
         if not raw:
             return None
         structure = Structure.from_json(raw.decode("utf-8"))
@@ -208,7 +243,7 @@ class IstatClient:
         url = self.data_url(dataflow, key_str)
         params = {"startPeriod": start, "endPeriod": end}
         params = {k: v for k, v in params.items() if v}
-        resp = self._get(url, params=params, accept=CSV_ACCEPT)
+        resp = self._get(url, params=params, accept=self.source.csv_accept)
         if resp is None:
             return pd.DataFrame(columns=[*dimensions, "TIME_PERIOD", "OBS_VALUE"])
         df = read_sdmx_csv(resp.content)
@@ -217,11 +252,14 @@ class IstatClient:
         return df.reset_index(drop=True)
 
     def data_url(self, dataflow: str, key: str) -> str:
-        return f"{self.base_url}/data/{AGENCY},{dataflow},1.0/{key}/ALL/"
+        path = self.source.data_path.format(flow=dataflow, key=key)
+        return f"{self.source.base_url}/{path}"
 
 
-def _cache_path(dataflow: str) -> str:
-    return f".cache/structure_{dataflow}.json"
+def _cache_path(source: str, dataflow: str) -> str:
+    # ISTAT keeps the bare name so existing caches stay valid.
+    prefix = "" if source == "istat" else f"{source}_"
+    return f".cache/structure_{prefix}{dataflow}.json"
 
 
 def _codes(value: str | Sequence[str] | None) -> list[str]:
@@ -263,7 +301,8 @@ def build_key(
 
 def read_sdmx_csv(content: bytes) -> pd.DataFrame:
     df = pd.read_csv(io.BytesIO(content), dtype=str, keep_default_na=False)
-    df = df.drop(columns=[c for c in df.columns if c == "DATAFLOW" or c.startswith("NOTE_")])
+    drop = [c for c in df.columns if c in ("DATAFLOW", "KEY") or c.startswith("NOTE_")]
+    df = df.drop(columns=drop)
     df["OBS_VALUE"] = pd.to_numeric(df["OBS_VALUE"].replace("", None), errors="coerce")
     return df
 
@@ -276,7 +315,7 @@ def parse_structure(content: bytes, dataflow: str) -> Structure:
 
     dsd = root.find(".//s:DataStructure", _NS)
     if dsd is None:
-        raise IstatError(f"no DataStructure for {dataflow}")
+        raise SdmxError(f"no DataStructure for {dataflow}")
 
     codelists = {
         cl.get("id"): {code.get("id"): _pick_name(code) for code in cl.findall("s:Code", _NS)}

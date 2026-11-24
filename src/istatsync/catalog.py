@@ -9,6 +9,8 @@ import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .sdmx import SOURCES
+
 FOLDERS = {"A": "annuali", "Q": "trimestrali", "M": "mensili"}
 _ID = re.compile(r"^[a-z0-9_]+$")
 
@@ -31,6 +33,11 @@ class Dataset:
     # stacked charts. The CSV always keeps ISTAT's signs.
     negate: list[str] = field(default_factory=list)
     notes: str = ""
+    # "istat" or "ecb" (Banca d'Italia financial accounts via the ECB).
+    source: str = "istat"
+    # Disabled datasets stay in the catalogue but are skipped by `run`
+    # unless named explicitly.
+    enabled: bool = True
 
     @property
     def folder(self) -> str:
@@ -39,7 +46,9 @@ class Dataset:
     @property
     def fingerprint(self) -> str:
         """Changes whenever the definition changes, forcing a re-download."""
-        payload = json.dumps(asdict(self), sort_keys=True, ensure_ascii=False)
+        # `enabled` and `notes` do not change the data, so they are left out.
+        fields = {k: v for k, v in asdict(self).items() if k not in ("enabled", "notes")}
+        payload = json.dumps(fields, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(payload.encode()).hexdigest()[:12]
 
 
@@ -57,6 +66,8 @@ def load_catalog(path: Path) -> list[Dataset]:
             raise ValueError(f"dataset id {ds.id!r}: use lowercase letters, digits and _")
         if ds.id in seen:
             raise ValueError(f"duplicate dataset id {ds.id!r}")
+        if ds.source not in SOURCES:
+            raise ValueError(f"{ds.id}: source must be one of {sorted(SOURCES)}")
         if ds.frequency not in FOLDERS:
             raise ValueError(f"{ds.id}: frequency must be one of {sorted(FOLDERS)}")
         if ds.filter.get("FREQ", ds.frequency) != ds.frequency:

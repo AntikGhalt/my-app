@@ -1,12 +1,15 @@
+from dataclasses import replace
+
 import pytest
 import requests
 from conftest import FIXTURES, FakeResponse, FakeSession
 
 from istatsync.sdmx import (
-    IstatClient,
-    IstatError,
+    SOURCES,
     RateLimited,
     RequestPacer,
+    SdmxClient,
+    SdmxError,
     Structure,
     build_key,
     parse_structure,
@@ -25,14 +28,11 @@ CSV = (
 )
 
 
-def client(*responses, **kw):
-    return IstatClient(
-        "https://example.org/rest",
-        session=FakeSession(*responses),
-        min_interval=0,
-        sleep=lambda s: None,
-        **kw,
-    )
+TEST_SOURCE = replace(SOURCES["istat"], base_url="https://example.org/rest", min_interval=0)
+
+
+def client(*responses, source=TEST_SOURCE, **kw):
+    return SdmxClient(source, session=FakeSession(*responses), sleep=lambda s: None, **kw)
 
 
 # -- keys --------------------------------------------------------------------
@@ -116,13 +116,13 @@ def test_server_errors_are_retried():
 
 def test_gives_up_after_max_retries():
     c = client(FakeResponse(503), FakeResponse(503), FakeResponse(503), max_retries=3)
-    with pytest.raises(IstatError, match="503"):
+    with pytest.raises(SdmxError, match="503"):
         c.data("X", DIMS, {})
 
 
 def test_bad_request_is_not_retried():
     c = client(FakeResponse(400, b"Semantic error"))
-    with pytest.raises(IstatError, match="400"):
+    with pytest.raises(SdmxError, match="400"):
         c.data("X", DIMS, {})
 
 
@@ -165,3 +165,26 @@ def test_structure_json_roundtrip(structure):
 def test_read_sdmx_csv_keeps_codes_as_text():
     df = read_sdmx_csv(b"DATAFLOW,REF_AREA,TIME_PERIOD,OBS_VALUE\nX,001,2024,1\n")
     assert df["REF_AREA"].iloc[0] == "001"
+
+
+def test_ecb_urls_and_csv_layout():
+    ecb = replace(SOURCES["ecb"], min_interval=0)
+    body = (
+        b"KEY,FREQ,REF_AREA,ACCOUNTING_ENTRY,TIME_PERIOD,OBS_VALUE,TITLE\n"
+        b"QSA.Q.IT.A,Q,IT,A,2026-Q2,6608813,Italy\n"
+    )
+    c = client(FakeResponse(200, body), source=ecb)
+    df = c.data("QSA", ["FREQ", "REF_AREA", "ACCOUNTING_ENTRY"], {"REF_AREA": "IT"})
+    url, _ = c.session.calls[0]
+    assert url == "https://data-api.ecb.europa.eu/service/data/QSA/.IT."
+    assert "KEY" not in df and df["OBS_VALUE"].iloc[0] == 6608813
+
+
+def test_cache_paths_do_not_collide_between_sources(tmp_path, structure):
+    sink = LocalSink(tmp_path)
+    xml = (FIXTURES / "structure.xml").read_bytes()
+    client(FakeResponse(200, xml), cache=sink).structure("TEST_FLOW")
+    ecb = replace(SOURCES["ecb"], min_interval=0)
+    client(FakeResponse(200, xml), cache=sink, source=ecb).structure("TEST_FLOW")
+    names = sorted(p.name for p in (tmp_path / ".cache").iterdir())
+    assert names == ["structure_TEST_FLOW.json", "structure_ecb_TEST_FLOW.json"]

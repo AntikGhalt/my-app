@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from .catalog import Dataset
 from .periods import edition_key, latest_edition
-from .sdmx import IstatClient, RateLimited, Structure, build_key
+from .sdmx import RateLimited, SdmxClient, Structure, build_key
 from .sinks import Sink
 from .transform import build_table, to_csv, to_excel
 
@@ -35,9 +35,13 @@ class Outcome:
 
 class Runner:
     def __init__(
-        self, client: IstatClient, sink: Sink, tz: str = "Europe/Rome", force: bool = False
+        self,
+        clients: dict[str, SdmxClient],
+        sink: Sink,
+        tz: str = "Europe/Rome",
+        force: bool = False,
     ):
-        self.client = client
+        self.clients = clients
         self.sink = sink
         self.tz = ZoneInfo(tz)
         self.force = force
@@ -51,16 +55,18 @@ class Runner:
 
     def run(self, datasets: list[Dataset]) -> list[Outcome]:
         outcomes: list[Outcome] = []
-        throttled = False
+        throttled: set[str] = set()
         for ds in datasets:
-            if throttled:
-                outcomes.append(Outcome(ds.id, "skipped", detail="ISTAT throttling, not attempted"))
+            if ds.source in throttled:
+                detail = f"{ds.source} is throttling, not attempted"
+                outcomes.append(Outcome(ds.id, "skipped", detail=detail))
                 continue
             log.info("[%s] start (%s)", ds.id, ds.dataflow)
             try:
                 outcome = self.run_one(ds)
             except RateLimited as exc:
-                throttled = True
+                # Stop only this provider: the ECB does not care about ISTAT's ban.
+                throttled.add(ds.source)
                 outcome = Outcome(ds.id, "failed", detail=str(exc))
             except Exception as exc:  # one broken dataset must not stop the others
                 log.exception("[%s] failed", ds.id)
@@ -75,21 +81,22 @@ class Runner:
         return outcomes
 
     def run_one(self, ds: Dataset) -> Outcome:
-        structure = self.client.structure(ds.dataflow)
+        client = self.clients[ds.source]
+        structure = client.structure(ds.dataflow)
         key = self._key(ds, structure)
         previous = self.manifest.get(ds.id, {})
         same_definition = previous.get("fingerprint") == ds.fingerprint
 
         edition = None
         if "EDITION" in structure.dimensions:
-            edition = ds.edition or self._probe_edition(ds, structure, key)
+            edition = ds.edition or self._probe_edition(client, ds, structure, key)
             if edition is None:
                 return Outcome(ds.id, "failed", detail="no edition with data found")
             if not self.force and same_definition and previous.get("edition") == edition:
                 return self._unchanged(ds, previous, "edition already published")
             key["EDITION"] = edition
 
-        raw = self.client.data(ds.dataflow, structure.dimensions, key, start=ds.start)
+        raw = client.data(ds.dataflow, structure.dimensions, key, start=ds.start)
         table = build_table(raw, ds, structure, edition)
         digest = table.content_hash()
 
@@ -102,7 +109,7 @@ class Runner:
             self._archive(ds, previous)
 
         key_str, _ = build_key(structure.dimensions, key)
-        source = self.client.data_url(ds.dataflow, key_str)
+        source = client.data_url(ds.dataflow, key_str)
         self.sink.write(f"{base}.xlsx", to_excel(table, stamp.isoformat(), source))
         self.sink.write(f"{base}.csv", to_csv(table))
 
@@ -137,13 +144,13 @@ class Runner:
             )
         return key
 
-    def _probe_edition(self, ds: Dataset, structure: Structure, key: dict) -> str | None:
+    def _probe_edition(
+        self, client: SdmxClient, ds: Dataset, structure: Structure, key: dict
+    ) -> str | None:
         """One small request over recent years with EDITION left empty: ISTAT
         then returns every edition at once, and we pick the newest complete one."""
         start = str(date.today().year - PROBE_YEARS)
-        probe = self.client.data(
-            ds.dataflow, structure.dimensions, {**key, "EDITION": []}, start=start
-        )
+        probe = client.data(ds.dataflow, structure.dimensions, {**key, "EDITION": []}, start=start)
         if probe.empty:
             return None
         series_dims = [d for d in structure.dimensions if d in probe and d != "EDITION"]

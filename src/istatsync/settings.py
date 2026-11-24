@@ -10,7 +10,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_BASE_URL = "https://esploradati.istat.it/SDMXWS/rest"
+from .sdmx import SOURCES
+
+DEFAULT_BASE_URL = SOURCES["istat"].base_url
 
 
 def _load_dotenv(path: Path) -> None:
@@ -40,7 +42,7 @@ class Settings:
     min_request_interval: float = 13.0
     request_timeout: float = 300.0
     max_retries: int = 3
-    structure_ttl_days: int = 7
+    structure_ttl_days: int = 30
     drive_folder_id: str | None = None
     timezone: str = "Europe/Rome"
 
@@ -56,7 +58,7 @@ class Settings:
             min_request_interval=float(_env("MIN_REQUEST_INTERVAL", "13")),
             request_timeout=float(_env("REQUEST_TIMEOUT", "300")),
             max_retries=int(_env("MAX_RETRIES", "3")),
-            structure_ttl_days=int(_env("STRUCTURE_TTL_DAYS", "7")),
+            structure_ttl_days=int(_env("STRUCTURE_TTL_DAYS", "30")),
             drive_folder_id=_env("DRIVE_FOLDER_ID"),
             timezone=_env("TIMEZONE", "Europe/Rome"),
         )

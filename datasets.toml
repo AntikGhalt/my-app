@@ -57,9 +57,57 @@ title = "Popolazione media del periodo (trimestrale)"
 dataflow = "163_88_DF_DCCN_OCCQSEC2010_2"
 frequency = "Q"
 
+[[dataset]]
+id = "ula_trimestrali"
+title = "Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (trimestrale)"
+dataflow = "163_88_DF_DCCN_OCCQSEC2010_1"
+frequency = "Q"
+filter = { REF_AREA = "IT", DATA_TYPE_AGGR = ["FT", "PS", "HW"], EMPLOYMENT_STATUS = ["1", "2", "9"], TYPE_EMPLOYMENT = "TOT" }
+sheets_by = "ADJUSTMENT"
+notes = "FT = unità di lavoro (ULA), PS = occupati, HW = ore lavorate, in migliaia. EMPLOYMENT_STATUS 1 = dipendenti, 2 = indipendenti, 9 = totale. Attenzione: per il reddito da lavoro dipendente per ULA servono le ULA (FT), non gli occupati (PS)."
+
+[[dataset]]
+id = "redditi_lavoro_trimestrali"
+title = "Redditi da lavoro dipendente, retribuzioni lorde e contributi per branca (trimestrale)"
+dataflow = "163_1226_DF_DCCN_QNA1_5"
+frequency = "Q"
+sheets_by = "ADJUSTMENT"
+
+[[dataset]]
+id = "ipab_trimestrale"
+title = "Prezzi delle abitazioni (IPAB), base 2025 (trimestrale, dal 2010)"
+dataflow = "143_497_DF_DCSP_IPAB_6"
+frequency = "Q"
+sheets_by = "MEASURE"
+notes = "Il dato dell'ultimo trimestre è provvisorio. Serve per stimare la ricchezza immobiliare degli anni non ancora pubblicati."
+
+[[dataset]]
+id = "ricchezza_finanziaria_trimestrale"
+title = "Famiglie e ISP: attività e passività finanziarie, consistenze e transazioni (Banca d'Italia, trimestrale)"
+source = "ecb"
+dataflow = "QSA"
+frequency = "Q"
+filter = { ADJUSTMENT = "N", REF_AREA = "IT", COUNTERPART_AREA = "W0", REF_SECTOR = "S1M", COUNTERPART_SECTOR = "S1", CONSOLIDATION = "N", ACCOUNTING_ENTRY = ["A", "L"], STO = ["LE", "F"], MATURITY = "_Z", EXPENDITURE = "_Z", UNIT_MEASURE = "XDC", CURRENCY_DENOM = "_T", VALUATION = "S", PRICES = "V", TRANSFORMATION = "N", CUST_BREAKDOWN = "_T" }
+sheets_by = "STO"
+notes = "Conti finanziari della Banca d'Italia (tavola TFAT0012), letti dal dataset QSA della BCE a cui la Banca li trasmette: stessi valori, ma con un'API pubblica. Settore S1M = famiglie e istituzioni senza scopo di lucro (perimetro diverso da S14A del reddito). LE = consistenze, F = transazioni; A = attività, L = passività; INSTR_ASSET F = totale. Ricchezza finanziaria netta = attività - passività (LE, F)."
+
 # ---------------------------------------------------------------------------
 # Annuali
 # ---------------------------------------------------------------------------
+
+[[dataset]]
+id = "ula_annuali"
+title = "Unità di lavoro, occupati e ore lavorate per branca, dipendenti e totale (annuale)"
+dataflow = "92_507_DF_DCCN_OCCNSEC2010_1"
+frequency = "A"
+filter = { REF_AREA = "IT", DATA_TYPE_AGGR = ["FT", "PS", "HW"], EMPLOYMENT_STATUS = ["1", "2", "9"], TYPE_EMPLOYMENT = "TOT" }
+
+[[dataset]]
+id = "ipab_annuale"
+title = "Prezzi delle abitazioni (IPAB), base 2025, medie annue (dal 2010)"
+dataflow = "143_497_DF_DCSP_IPAB_7"
+frequency = "A"
+sheets_by = "MEASURE"
 
 [[dataset]]
 id = "famiglie_conto_annuale"
@@ -96,7 +144,11 @@ dataflow = "92_507_DF_DCCN_OCCNSEC2010_3"
 frequency = "A"
 
 # ---------------------------------------------------------------------------
-# Prezzi al consumo (NIC)
+# Prezzi al consumo (NIC): disattivati.
+#
+# Non servono alla tabella sul reddito disponibile e sono i download più
+# pesanti (ECOICOP: 160 mila righe, 32 MB). Si scaricano lo stesso con
+# `istatsync run nic_ecoicop_mensili`, oppure togliendo `enabled = false`.
 #
 # Da gennaio 2026 ISTAT pubblica il NIC in base 2025 con classificazione
 # ECOICOP 2. DATA_TYPE 85 = base 2025 (dal 2026), DATA_TYPE 39 = serie nelle
@@ -106,6 +158,7 @@ frequency = "A"
 
 [[dataset]]
 id = "nic_tipologie_mensili"
+enabled = false
 title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile, base 2025)"
 dataflow = "167_745_DF_DCSP_NIC1B2025_2"
 frequency = "M"
@@ -114,6 +167,7 @@ sheets_by = "MEASURE"
 
 [[dataset]]
 id = "nic_tipologie_mensili_base2015"
+enabled = false
 title = "NIC per tipologia di prodotto, Italia e ripartizioni (mensile 2016-2025, base 2015)"
 dataflow = "167_744_DF_DCSP_NIC1B2015_2"
 frequency = "M"
@@ -123,6 +177,7 @@ notes = "Serie chiusa a dicembre 2025: ISTAT non la aggiorna più. Resta per con
 
 [[dataset]]
 id = "nic_ecoicop_mensili"
+enabled = false
 title = "NIC per voce ECOICOP 2, numeri indici (mensile, tutte le basi)"
 dataflow = "167_745_DF_DCSP_NIC1B2025_6"
 frequency = "M"
@@ -132,6 +187,7 @@ notes = "Solo numeri indici, un foglio per base: 1995=100 (1996-2010), 2010=100 
 
 [[dataset]]
 id = "nic_medie_annue"
+enabled = false
 title = "NIC medie annue per voce ECOICOP 2 (1996-2025)"
 dataflow = "167_747_DCSP_NIC2B2025_1"
 frequency = "A"

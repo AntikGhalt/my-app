@@ -42,7 +42,7 @@ def sink(tmp_path):
 
 
 def run(client, sink, *datasets, force=False):
-    return Runner(client, sink, force=force).run(list(datasets))
+    return Runner({"istat": client}, sink, force=force).run(list(datasets))
 
 
 def test_first_run_publishes_files_and_manifest(structure, dataset, sink, tmp_path):
@@ -133,3 +133,13 @@ def test_force_republishes(structure, dataset, sink):
 def test_source_url_matches_key(structure):
     key, _ = build_key(structure.dimensions, {"FREQ": "Q", "EDITION": "2025M10"})
     assert key == "Q...2025M10"
+
+
+def test_throttling_is_per_source(structure, dataset, sink):
+    istat = FakeClient(structure, {})
+    istat.fail_with = RateLimited("HTTP 429")
+    ecb = FakeClient(structure, {"2025M10": make_rows("2025M10")})
+    later_istat = replace(dataset, id="later_istat")
+    wf = replace(dataset, id="wf", source="ecb")
+    outcomes = Runner({"istat": istat, "ecb": ecb}, sink).run([dataset, later_istat, wf])
+    assert [o.status for o in outcomes] == ["failed", "skipped", "updated"]
