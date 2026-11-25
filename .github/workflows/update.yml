@@ -96,7 +96,17 @@ jobs:
           read -r -a ids <<< "$DATASETS"
           args=()
           if [ "$FORCE" = "true" ]; then args+=(--force); fi
-          istatsync run "${ids[@]}" "${args[@]}"
+          istatsync run "${ids[@]}" "${args[@]}" --summary "$RUNNER_TEMP/riepilogo.json"
+
+      # One e-mail when new data were published. Failures are already mailed
+      # by GitHub to the account owner.
+      - name: Avviso via e-mail
+        if: always() && vars.NOTIFY_TO != ''
+        env:
+          ISTATSYNC_NOTIFY_TO: ${{ vars.NOTIFY_TO }}
+          ISTATSYNC_SMTP_USER: ${{ vars.SMTP_USER }}
+          ISTATSYNC_SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: istatsync notify --summary "$RUNNER_TEMP/riepilogo.json"
 
       - name: Salva lo stato
         if: always() && env.PUBLISH == 'artifact'

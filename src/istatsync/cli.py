@@ -6,6 +6,7 @@ import argparse
 import logging
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 from .catalog import load_catalog
 from .runner import Runner
@@ -60,6 +61,11 @@ def cmd_run(args, settings: Settings) -> int:
     logging.info("writing to %s", sink.describe())
     clients = _clients(settings, cache=sink)
     outcomes = Runner(clients, sink, settings.timezone, force=args.force).run(datasets)
+    if args.summary:
+        from .notify import write_summary
+
+        titles = {d.id: d.title for d in load_catalog(settings.catalog_path)}
+        write_summary(Path(args.summary), outcomes, titles, sink.describe())
 
     width = max((len(o.dataset) for o in outcomes), default=10)
     for o in outcomes:
@@ -68,6 +74,17 @@ def cmd_run(args, settings: Settings) -> int:
         if client.requests_made:
             print(f"{client.requests_made} requests to {name}")
     return 1 if any(o.status in ("failed", "skipped") for o in outcomes) else 0
+
+
+def cmd_notify(args, settings: Settings) -> int:
+    from .notify import notify_from_env
+
+    try:
+        print(notify_from_env(Path(args.summary), settings.drive_folder_id))
+    except Exception as exc:  # a mail problem must not hide the data run's result
+        print(f"invio e-mail non riuscito: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_tables(args, settings: Settings) -> int:
@@ -114,7 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--local", action="store_true", help="write to OUTPUT_DIR even if Drive is configured"
     )
+    run.add_argument("--summary", metavar="FILE", help="write a JSON summary for `notify`")
     run.set_defaults(func=cmd_run)
+
+    note = sub.add_parser("notify", help="e-mail what the last run published")
+    note.add_argument("--summary", metavar="FILE", required=True)
+    note.set_defaults(func=cmd_notify)
 
     tab = sub.add_parser("tabelle", help="rebuild the summary tables from published data")
     tab.add_argument("--local", action="store_true", help="use OUTPUT_DIR even if Drive is set")

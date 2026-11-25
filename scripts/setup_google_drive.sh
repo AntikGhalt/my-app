@@ -4,14 +4,17 @@
 #
 # Run it in Cloud Shell (https://shell.cloud.google.com), which is free:
 #
-#   bash setup_google_drive.sh <project-id> [owner/repo]
+#   bash setup_google_drive.sh <project-id> [owner/repo] [repository-id]
 #
+# Access is tied to the repository's numeric id, which survives renames.
 # Nothing here needs a billing account: IAM, STS and the Drive API are free.
-# It is safe to run twice.
+# It is safe to run again, e.g. to move an older name-based setup to the id.
 set -euo pipefail
 
 PROJECT="${1:?usage: setup_google_drive.sh <project-id> [owner/repo]}"
 REPO="${2:-AntikGhalt/my-app}"
+# From https://api.github.com/repos/<owner>/<repo> ("id").
+REPO_ID="${3:-1109487059}"
 SA_NAME="istatsync-drive"
 POOL="github"
 PROVIDER="github-actions"
@@ -34,21 +37,32 @@ if ! gcloud iam workload-identity-pools describe "$POOL" --location=global >/dev
     --display-name="GitHub Actions"
 fi
 
-if ! gcloud iam workload-identity-pools providers describe "$PROVIDER" \
+# Only tokens issued for this repository (by id, so renames are fine).
+MAPPING="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_id=assertion.repository_id"
+CONDITION="assertion.repository_id=='${REPO_ID}'"
+if gcloud iam workload-identity-pools providers describe "$PROVIDER" \
     --location=global --workload-identity-pool="$POOL" >/dev/null 2>&1; then
-  # Only tokens issued for this repository are accepted.
+  gcloud iam workload-identity-pools providers update-oidc "$PROVIDER" \
+    --location=global --workload-identity-pool="$POOL" \
+    --attribute-mapping="$MAPPING" --attribute-condition="$CONDITION"
+else
   gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" \
     --location=global --workload-identity-pool="$POOL" \
-    --display-name="GitHub ${REPO}" \
+    --display-name="GitHub repository ${REPO_ID}" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
-    --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-    --attribute-condition="assertion.repository=='${REPO}'"
+    --attribute-mapping="$MAPPING" --attribute-condition="$CONDITION"
 fi
 
+POOL_PATH="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}"
 gcloud iam service-accounts add-iam-policy-binding "$SA" \
   --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}" \
+  --member="principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository_id/${REPO_ID}" \
   >/dev/null
+# Drop the older name-based grant, if an earlier version of this script made it.
+gcloud iam service-accounts remove-iam-policy-binding "$SA" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository/${REPO}" \
+  >/dev/null 2>&1 || true
 
 cat <<OUT
 
