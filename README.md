@@ -354,6 +354,35 @@ Su Drive i file esistenti vengono aggiornati sul posto, quindi mantengono lo
 stesso id e lo stesso link, e le connessioni di Tableau restano valide. Le
 sottocartelle mancanti vengono create.
 
+### Avviso via e-mail
+
+Quando un'esecuzione pubblica dati nuovi o rivisti parte un'e-mail (una sola
+per esecuzione) con l'elenco dei dataset aggiornati, l'edizione, l'ultimo
+periodo, le tabelle ricalcolate e il link alla cartella. Se non c'è niente di
+nuovo non arriva nulla. Gli errori invece li segnala GitHub, con la sua e-mail
+al proprietario del repository.
+
+Il messaggio parte da un account Gmail con una *password per le app* (serve la
+verifica in due passaggi attiva):
+
+1. sull'account mittente: <https://myaccount.google.com/apppasswords>, crea una
+   password per "istatsync" e copiala;
+2. su GitHub, *Settings → Secrets and variables → Actions*:
+   * secret `SMTP_PASSWORD`: la password per le app;
+   * variabile `SMTP_USER`: l'indirizzo Gmail che invia;
+   * variabile `NOTIFY_TO`: chi riceve (più indirizzi separati da virgola).
+
+Gli indirizzi stanno nelle variabili di GitHub e non nel codice, perché il
+repository è pubblico. Senza `NOTIFY_TO` il passaggio viene saltato.
+
+### Cambiare nome al repository
+
+Si può fare da *Settings → General → Repository name*; GitHub reindirizza i
+vecchi link. L'accesso a Google Drive è legato all'id numerico del repository,
+non al nome, a patto che la configurazione sia stata fatta (o rifatta) con la
+versione attuale di `scripts/setup_google_drive.sh`: chi l'ha lanciata prima
+deve rilanciarla una volta, prima di cambiare nome.
+
 ### In locale
 
 ```bash
