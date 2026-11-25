@@ -12,7 +12,7 @@
 set -euo pipefail
 
 PROJECT="${1:?usage: setup_google_drive.sh <project-id> [owner/repo]}"
-REPO="${2:-AntikGhalt/my-app}"
+REPO="${2:-AntikGhalt/sdmx-pipeline}"
 # From https://api.github.com/repos/<owner>/<repo> ("id").
 REPO_ID="${3:-1109487059}"
 SA_NAME="istatsync-drive"

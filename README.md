@@ -327,7 +327,7 @@ GitHub si presenta a Google con un token che dura pochi minuti):
    Google Cloud qualsiasi, anche senza fatturazione, e lancia
 
    ```bash
-   curl -sO https://raw.githubusercontent.com/AntikGhalt/my-app/main/scripts/setup_google_drive.sh
+   curl -sO https://raw.githubusercontent.com/AntikGhalt/sdmx-pipeline/main/scripts/setup_google_drive.sh
    bash setup_google_drive.sh <id-progetto>
    ```
 
